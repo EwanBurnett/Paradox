@@ -3,6 +3,8 @@
 
 int main() {
     printf("Hello, RT!\n");
-    VkInstanceCreateInfo i = {}; 
-    return 0; 
+
+    VkInstanceCreateInfo i = {};
+
+    return 0;     
 }
