@@ -1,0 +1,6 @@
+# Ignore IDE Generated Files
+**/.vs/
+**/[Bb]uild/ 
+**/[Oo]ut/ 
+
+
