@@ -4,8 +4,25 @@
 #include <stdexcept>
 #include <cstdint> 
 
+#include <unordered_map>
+
 namespace Paradox {
-    typedef uint32_t ParadoxError;
+    enum class ParadoxError : int32_t {
+        Success = 1,
+        Failed = 0,
+        
+        InitializationFailed = -1,
+        NotImplemented = -2, 
+
+        //...
+
+        ParadoxError_MAX = INT32_MAX
+    };
+
+
+    ParadoxError CheckError(const ParadoxError err);
+
+    std::string GetErrorString(const ParadoxError err); 
 
 
 #ifdef _MSC_VER
