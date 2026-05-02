@@ -34,11 +34,13 @@ Paradox::ParadoxError Paradox::Gpu::Init(const GpuInitInfo* pInitInfo)
     ParadoxError err = ParadoxError::Success;
 
     CreateInstance(pInitInfo);
-    LoadInstanceFunctions(pInitInfo); 
+    LoadInstanceFunctions(pInitInfo);
 
     if (pInitInfo->createDebug) {
         CreateDebugMessenger();
     }
+
+    AcquirePhyicalDevice();
 
 
     return err;
@@ -74,7 +76,7 @@ VkResult Paradox::Gpu::LoadInstanceFunctions(const GpuInitInfo* pInitInfo) {
         LOAD_VULKAN_FUNCTION(vkDestroyDebugUtilsMessengerEXT);
         LOAD_VULKAN_FUNCTION(vkSetDebugUtilsObjectNameEXT);
     }
-    return VK_SUCCESS; 
+    return VK_SUCCESS;
 }
 
 VkResult Paradox::Gpu::CreateInstance(const GpuInitInfo* pInitInfo)
@@ -84,12 +86,12 @@ VkResult Paradox::Gpu::CreateInstance(const GpuInitInfo* pInitInfo)
     //Check Default init info.
     const GpuInitInfo defaultInitInfo = {
         .applicationName = "Paradox-Application",
-        .applicationVersion = PackVersion(0, 0, 0), 
-        .createDebug = true, 
-    }; 
+        .applicationVersion = PackVersion(0, 0, 0),
+        .createDebug = true,
+    };
 
     if (!pInitInfo) {
-        pInitInfo = &defaultInitInfo; 
+        pInitInfo = &defaultInitInfo;
     }
 
     //Enumerate required instance layers / extensions
@@ -109,7 +111,7 @@ VkResult Paradox::Gpu::CreateInstance(const GpuInitInfo* pInitInfo)
     if (pInitInfo->createDebug == true) {
         Log::Message("[Paradox]\tEnabling Debug Layers.\n");
         instanceLayers.push_back("VK_LAYER_KHRONOS_validation");
-        instanceExtensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME); 
+        instanceExtensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
     }
 
     //Populate Application Info 
@@ -149,6 +151,106 @@ void Paradox::Gpu::DestroyInstance()
     }
 }
 
+VkResult Paradox::Gpu::AcquirePhyicalDevice()
+{
+    Log::Print(ELogColour::Magenta, "[Vulkan]\tSelecting a Physical Device...\n");
+
+
+    //Evaluate Physical Device feature support. 
+    VkPhysicalDeviceFeatures requiredFeatures = {};
+
+    //Enumerate existing physical devices
+    std::vector<VkPhysicalDevice> physicalDevices;
+    {
+        uint32_t physicalDeviceCount = 0;
+        vkEnumeratePhysicalDevices(m_Instance, &physicalDeviceCount, nullptr);
+        physicalDevices.resize(physicalDeviceCount);
+        vkEnumeratePhysicalDevices(m_Instance, &physicalDeviceCount, physicalDevices.data());
+    }
+
+    //Prefer Discrete GPUs -> Integrated GPUs -> CPUs -> Software Driver
+      //Require Vulkan 1.0 support. 
+    VkPhysicalDevice deviceCandidate = VK_NULL_HANDLE;
+    VkPhysicalDeviceType candidateType = VK_PHYSICAL_DEVICE_TYPE_MAX_ENUM;
+    {
+        for (const VkPhysicalDevice device : physicalDevices) {
+            //Query the Physical Device Properties for the relevant information. 
+            VkPhysicalDeviceProperties deviceProperties = {};
+            vkGetPhysicalDeviceProperties(device, &deviceProperties);
+
+            //Skip any devices that don't support Vulkan 1.2
+            if (deviceProperties.apiVersion < VK_API_VERSION_1_2) {
+                Log::Debug("Device [%s](%s) Skipped: Vulkan API Version (%d.%d.%d) was unsupported!\n", deviceProperties.deviceName, string_VkPhysicalDeviceType(deviceProperties.deviceType), VK_API_VERSION_MAJOR(deviceProperties.apiVersion), VK_API_VERSION_MINOR(deviceProperties.apiVersion), VK_API_VERSION_PATCH(deviceProperties.apiVersion));
+                continue;
+            }
+
+            {
+                //Evaluate device feature compatibility
+                VkPhysicalDeviceFeatures deviceFeatures = {};
+                vkGetPhysicalDeviceFeatures(device, &deviceFeatures);
+
+                bool featuresValid = true;
+
+                for (size_t i = 0; i < sizeof(VkPhysicalDeviceFeatures) / sizeof(VkBool32); i++) {
+                    VkBool32* a = ((VkBool32*)&requiredFeatures) + i;
+                    VkBool32* b = ((VkBool32*)&deviceFeatures) + i;
+
+                    if (*a == VK_TRUE) {
+                        if (*b != VK_TRUE) {
+                            featuresValid = false;
+                            Log::Debug("Device [%s](%s) Skipped: Not all required features are supported!\n", deviceProperties.deviceName, string_VkPhysicalDeviceType(deviceProperties.deviceType));
+                        }
+                    }
+                }
+
+                if (!featuresValid) {
+                    Log::Debug("Not all required Physical Device Features were available!\n");
+                    continue;
+                }
+            }
+
+            //Cache the physical device candidate
+            {
+                //Convenience Lambda
+                auto selectCandidate = [&]() {
+                    Log::Debug("Device [%s](%s) Is the current Best Candidate!\n\tVulkan API Version (%d.%d.%d)\n\tDriver Version (%d.%d.%d)\n", deviceProperties.deviceName, string_VkPhysicalDeviceType(deviceProperties.deviceType), VK_API_VERSION_MAJOR(deviceProperties.apiVersion), VK_API_VERSION_MINOR(deviceProperties.apiVersion), VK_API_VERSION_PATCH(deviceProperties.apiVersion), VK_API_VERSION_MAJOR(deviceProperties.driverVersion), VK_API_VERSION_MINOR(deviceProperties.driverVersion), VK_API_VERSION_PATCH(deviceProperties.driverVersion));
+
+                    deviceCandidate = device;
+                    candidateType = deviceProperties.deviceType;
+                    };
+
+                //Only evaluate if there IS a candidate already present
+                if (deviceCandidate != VK_NULL_HANDLE) {
+                    if (candidateType != VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU && deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
+                        selectCandidate();
+                    }
+                    else {
+                        selectCandidate();
+                    }
+                }
+                else {
+                    selectCandidate(); //This is the first candidate, so just select it anyway!
+                }
+
+            }
+        }
+
+        //Complain if there were no supported devices. 
+        if (deviceCandidate == VK_NULL_HANDLE) {
+            Log::Warning("No Physical Device Candidates were Valid!\n");
+        }
+
+        //Write-back the passing device candidate
+        m_PhysicalDevice = deviceCandidate;
+    }
+
+
+    Log::Debug("Physical Device Acquired -> <0x%08x>\n", m_PhysicalDevice);
+
+
+    return m_PhysicalDevice != VK_NULL_HANDLE ? VK_SUCCESS : VK_ERROR_DEVICE_LOST;
+}
+
 VkResult Paradox::Gpu::CreateDebugMessenger()
 {
     Log::Print(ELogColour::Magenta, "[Vulkan]\tCreating Debug Utils Messenger...\n");
@@ -168,15 +270,15 @@ VkResult Paradox::Gpu::CreateDebugMessenger()
 
     VkResult res = Gpu::vkCreateDebugUtilsMessengerEXT(m_Instance, &debugMessengerCreateInfo, m_pAllocationCallbacks, &m_DebugMessenger);
 
-    Log::Debug("vkCreateInstance(...) -> <0x%08x>\n", m_Instance);
+    Log::Debug("vkCreateDebugUtilsMessengerEXT(...) -> <0x%08x>\n", m_DebugMessenger);
     return res;
 }
 
 void Paradox::Gpu::DestroyDebugMessenger()
-{ 
+{
     if (m_Instance == VK_NULL_HANDLE) {
         CheckVkResult(VK_ERROR_DEVICE_LOST, "Invalid Vulkan Instance!\n");
-        return; 
+        return;
     }
 
     if (m_DebugMessenger != VK_NULL_HANDLE) {
