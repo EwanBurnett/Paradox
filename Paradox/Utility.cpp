@@ -1,4 +1,5 @@
 #include "Utility.h"
+#include "Logger.h"
 
 static const std::unordered_map<Paradox::ParadoxError, const char*> kErrorMappings{
     {Paradox::ParadoxError::Success, "Success"},
@@ -11,7 +12,7 @@ static const std::unordered_map<Paradox::ParadoxError, const char*> kErrorMappin
 
 Paradox::ParadoxError Paradox::CheckError(const Paradox::ParadoxError err) {
     if (err <= Paradox::ParadoxError::Failed) {
-        printf("Uh Oh!\n");
+        Log::Print(ELogColour::LightMagenta, "[Paradox] Internal Error - %s\n", GetErrorString(err).c_str());
     }
 
     return err;

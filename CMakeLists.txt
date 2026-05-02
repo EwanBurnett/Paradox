@@ -93,7 +93,8 @@ target_link_libraries(${PROJECT_NAME}
     TracyClient
 )
 
-target_compile_definitions(${PROJECT_NAME} PUBLIC
+
+set_target_properties(${PROJECT_NAME} PROPERTIES 
     # Target C++ 20
     CXX_STANDARD 20
     CXX_STANDARD_REQUIRED ON

@@ -31,6 +31,8 @@ namespace Paradox {
     class Log {
     public:
         static void Print(const ELogColour colour, const char* fmt, ...); 
+        static void Message(const char* fmt, ...); 
+        static void Debug(const char* fmt, ...); 
         static void Warning(const char* fmt, ...); 
         static void Error(const char* file, const size_t line, const char* function, const char* fmt, ...); 
 

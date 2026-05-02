@@ -65,6 +65,35 @@ void Paradox::Log::Print(const ELogColour colour, const char* fmt, ...)
     SetConsoleColour(ELogColour::White);
 }
 
+void Paradox::Log::Message(const char* fmt, ...)
+{ 
+    //Update the console colour. 
+    SetConsoleColour(ELogColour::LightBlue); 
+
+    va_list args; 
+    va_start(args, fmt); 
+    Output(fmt, args); 
+    va_end(args); 
+
+    //Reset the console colour. 
+    SetConsoleColour(ELogColour::White);
+}
+
+void Paradox::Log::Debug(const char* fmt, ...)
+{ 
+    //Update the console colour. 
+    SetConsoleColour(ELogColour::LightGreen); 
+
+    Output("[Debug]\t");
+    va_list args; 
+    va_start(args, fmt); 
+    Output(fmt, args); 
+    va_end(args); 
+
+    //Reset the console colour. 
+    SetConsoleColour(ELogColour::White);
+}
+
 void Paradox::Log::Warning(const char* fmt, ...)
 { 
     //Update the console colour. 

@@ -17,6 +17,7 @@ int main() {
     Paradox::GpuInitInfo initInfo = {}; 
     initInfo.applicationName = "Paradox"; 
     initInfo.applicationVersion = PackVersion(1, 0, 0); 
+    initInfo.createDebug = true;
 
     Paradox::ParadoxError err; 
     
@@ -24,6 +25,8 @@ int main() {
     err = gpu.Init(&initInfo); 
 
     Paradox::CheckError(err); 
+    //Paradox::Log::Print(Paradox::ELogColour::Blue, Paradox::GetErrorString(err).c_str()); 
+
 
     gpu.Shutdown(); 
 
