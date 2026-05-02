@@ -7,6 +7,11 @@
 namespace Paradox {
     typedef uint32_t ParadoxError;
 
+
+#ifdef _MSC_VER
+#define __PRETTY_FUNCTION__ __FUNCSIG__
+#endif
+
     [[noreturn]]
     inline void Unreachable() {
 #if defined(_MSC_VER) && !defined(__clang__)

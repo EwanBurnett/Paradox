@@ -1,6 +1,7 @@
 #ifndef __LOGGER_H
 #define __LOGGER_H
 
+#include "Utility.h"
 #include <cstdint> 
 #include <cstdarg> 
 #include <cstdio> 
@@ -30,6 +31,8 @@ namespace Paradox {
     class Log {
     public:
         static void Print(const ELogColour colour, const char* fmt, ...); 
+        static void Warning(const char* fmt, ...); 
+        static void Error(const char* file, const size_t line, const char* function, const char* fmt, ...); 
 
     private: 
         static void SetConsoleColour(const ELogColour colour);

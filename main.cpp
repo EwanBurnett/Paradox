@@ -8,6 +8,9 @@ int main() {
         Paradox::Log::Print((Paradox::ELogColour)i, "Hello, RT!\t[%d]\n", i);
     }
 
+    Paradox::Log::Warning("A warning!\n"); 
+    Paradox::Log::Error(__FILE__, __LINE__, __PRETTY_FUNCTION__, "Something went wrong!\n"); 
+
     VkInstanceCreateInfo i = {};
 
     return 0;     

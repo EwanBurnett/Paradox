@@ -1,5 +1,4 @@
 #include "Logger.h"
-#include "Utility.h"
 #include <map> 
 #include <assert.h>
 
@@ -64,6 +63,39 @@ void Paradox::Log::Print(const ELogColour colour, const char* fmt, ...)
 
     //Reset the console colour. 
     SetConsoleColour(ELogColour::White);
+}
+
+void Paradox::Log::Warning(const char* fmt, ...)
+{ 
+    //Update the console colour. 
+    SetConsoleColour(ELogColour::Yellow); 
+
+    Output("[Warning]\t");
+    va_list args; 
+    va_start(args, fmt); 
+    Output(fmt, args); 
+    va_end(args); 
+
+    //Reset the console colour. 
+    SetConsoleColour(ELogColour::White);
+}
+
+void Paradox::Log::Error(const char* file, const size_t line, const char* function, const char* fmt, ...)
+{ 
+    //Update the console colour. 
+    SetConsoleColour(ELogColour::LightRed); 
+
+    Output("[Error]\t");
+    va_list args; 
+    va_start(args, fmt); 
+    Output(fmt, args); 
+    va_end(args); 
+    Output("File: %s\nLine: %d\nFunction: %s\n", file, line, function); 
+
+    //Reset the console colour. 
+    SetConsoleColour(ELogColour::White);
+
+    assert(false && fmt); 
 }
 
 void Paradox::Log::SetConsoleColour(const ELogColour colour)
