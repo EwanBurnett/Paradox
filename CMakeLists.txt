@@ -80,7 +80,7 @@ target_include_directories(imgui PUBLIC ${imgui_SOURCE_DIR})
 
 add_executable(${PROJECT_NAME} 
     main.cpp
-)
+ "Paradox/Utility.h" "Paradox/Logger.h" "Paradox/Logger.cpp")
 
 # Link Library Dependencies
 target_link_libraries(${PROJECT_NAME}
