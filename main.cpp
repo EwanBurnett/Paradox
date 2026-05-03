@@ -42,7 +42,7 @@ int main() {
         ParadoxZoneScoped;
         Paradox::Log::Print(Paradox::ELogColour::Cyan, "Frame %d               \r", frameIdx++);
 
-        Paradox::Profiler::EndFrame;
+        Paradox::Profiler::EndFrame();
     }
 
 

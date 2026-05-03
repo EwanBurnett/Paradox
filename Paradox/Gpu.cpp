@@ -443,22 +443,14 @@ VkResult Paradox::Gpu::CreateDevice()
     VulkanZoneScoped;
     VK_LOG("Creating Device...\n");
 
-    const VkPhysicalDeviceDescriptorIndexingFeatures descriptorIndexingFeatures = {
-        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES,
-        .pNext = nullptr,
-        .shaderSampledImageArrayNonUniformIndexing = VK_TRUE,  //Enable Non-uniform Array indexing (#extension GL_EXT_nonuniform_qualifier : require)
-        .shaderStorageBufferArrayNonUniformIndexing = VK_TRUE,   //Enable Non-uniform Array indexing (#extension GL_EXT_nonuniform_qualifier : require)
-        .shaderStorageImageArrayNonUniformIndexing = VK_TRUE,  //Enable Non-uniform Array indexing (#extension GL_EXT_nonuniform_qualifier : require)
-        .descriptorBindingSampledImageUpdateAfterBind = VK_TRUE,
-        .descriptorBindingStorageImageUpdateAfterBind = VK_TRUE,
-        .descriptorBindingStorageBufferUpdateAfterBind = VK_TRUE,
-        .descriptorBindingPartiallyBound = VK_TRUE, //Enable unbound descriptor slots
-        .runtimeDescriptorArray = VK_TRUE, //Enable non-sized arrays
-    };
 
 
+
+
+    VkPhysicalDeviceFeatures features = {};
     std::vector<const char*> deviceExtensions;
-    //Get feature set extensions
+
+    //Get feature set extensions + physical device features
     std::set<std::string> featureExtensions = {};
     {
         for (const auto& featureSet : kFeatureRequirements) {
@@ -470,6 +462,15 @@ VkResult Paradox::Gpu::CreateDevice()
                     featureExtensions.emplace(ext);
                 }
             }
+
+            for (size_t i = 0; i < sizeof(VkPhysicalDeviceFeatures) / sizeof(VkBool32); i++) {
+                VkBool32* a = ((VkBool32*)&featureSet.second.features) + i;
+                VkBool32* b = ((VkBool32*)&features) + i;
+
+                //Unify the feature requirements. 
+                *b |= *a;
+            }
+
         }
 
         for (auto& ext : featureExtensions) {
@@ -478,9 +479,16 @@ VkResult Paradox::Gpu::CreateDevice()
     }
 
     //Configure device features. 
+
+    VkPhysicalDeviceDynamicRenderingFeatures dynamicRenderingFeatures = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES,
+        .pNext = nullptr,
+        .dynamicRendering = m_Capabilities[(size_t)EGpuFeatureCapabilities::Dynamic_Rendering] ? VK_TRUE : VK_FALSE,
+    };
+
     VkPhysicalDeviceAccelerationStructureFeaturesKHR accelerationStructureFeatures = {
        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR,
-       .pNext = nullptr,
+       .pNext = &dynamicRenderingFeatures,
        .accelerationStructure = m_Capabilities[(size_t)EGpuFeatureCapabilities::Ray_Tracing_Pipeline] || m_Capabilities[(size_t)EGpuFeatureCapabilities::Ray_Query] ? VK_TRUE : VK_FALSE,
     };
 
@@ -499,19 +507,23 @@ VkResult Paradox::Gpu::CreateDevice()
     VkPhysicalDeviceVulkan12Features vulkan_1_2_features = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
         .pNext = &rayTracingPipelineFeatures,
-
         .descriptorIndexing = m_Capabilities[(size_t)EGpuFeatureCapabilities::Bindless] ? VK_TRUE : VK_FALSE,
-        .shaderUniformBufferArrayNonUniformIndexing = m_Capabilities[(size_t)EGpuFeatureCapabilities::Bindless] ? VK_TRUE : VK_FALSE,
+        .shaderUniformBufferArrayNonUniformIndexing = m_Capabilities[(size_t)EGpuFeatureCapabilities::Bindless] ? VK_TRUE : VK_FALSE, //(#extension GL_EXT_nonuniform_qualifier : require)
         .shaderSampledImageArrayNonUniformIndexing = m_Capabilities[(size_t)EGpuFeatureCapabilities::Bindless] ? VK_TRUE : VK_FALSE,
         .shaderStorageBufferArrayNonUniformIndexing = m_Capabilities[(size_t)EGpuFeatureCapabilities::Bindless] ? VK_TRUE : VK_FALSE,
+        .shaderStorageImageArrayNonUniformIndexing = m_Capabilities[(size_t)EGpuFeatureCapabilities::Bindless] ? VK_TRUE : VK_FALSE,
+        .descriptorBindingSampledImageUpdateAfterBind = m_Capabilities[(size_t)EGpuFeatureCapabilities::Bindless] ? VK_TRUE : VK_FALSE,
+        .descriptorBindingStorageImageUpdateAfterBind = m_Capabilities[(size_t)EGpuFeatureCapabilities::Bindless] ? VK_TRUE : VK_FALSE,
+        .descriptorBindingStorageBufferUpdateAfterBind = m_Capabilities[(size_t)EGpuFeatureCapabilities::Bindless] ? VK_TRUE : VK_FALSE,
         .descriptorBindingPartiallyBound = m_Capabilities[(size_t)EGpuFeatureCapabilities::Bindless] ? VK_TRUE : VK_FALSE,
+        .runtimeDescriptorArray = m_Capabilities[(size_t)EGpuFeatureCapabilities::Bindless] ? VK_TRUE : VK_FALSE, //Enable non-sized arrays
         .bufferDeviceAddress = m_Capabilities[(size_t)EGpuFeatureCapabilities::Bindless] ? VK_TRUE : VK_FALSE,
     };
 
     const VkPhysicalDeviceFeatures2 deviceFeatures{
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
         .pNext = &vulkan_1_2_features,
-        .features = {}, //TODO: feature set union! 
+        .features = features,
     };
 
     //TODO: Expose n device queues!!!
@@ -536,6 +548,7 @@ VkResult Paradox::Gpu::CreateDevice()
 
     uint32_t qfi = FindGraphicsQueueFamilyIndex(m_PhysicalDevice);
 
+    //TODO: 
     //Expose 1 Graphics Queue for now.
     float priority = 1.0f;
     VkDeviceQueueCreateInfo queueCreateInfo = {
