@@ -87,8 +87,8 @@ Paradox::Gpu::Gpu()
 
     m_DebugMessenger = VK_NULL_HANDLE;
     m_Capabilities = {};
-     
-    m_EnableDebugUtils = false; 
+
+    m_EnableDebugUtils = false;
 }
 
 Paradox::ParadoxError Paradox::Gpu::Init(const GpuInitInfo* pInitInfo)
@@ -111,13 +111,22 @@ Paradox::ParadoxError Paradox::Gpu::Init(const GpuInitInfo* pInitInfo)
     LoadInstanceFunctions(pInitInfo);
 
     if (pInitInfo->createDebug) {
-        m_EnableDebugUtils = true; 
+        m_EnableDebugUtils = true;
         CreateDebugMessenger();
     }
 
     AcquirePhyicalDevice();
     CreateDevice();
 
+    //Set debug object names 
+    {
+        SetDebugObjectName(reinterpret_cast<uint64_t>(m_Instance), VK_OBJECT_TYPE_INSTANCE, "Paradox Instance");
+        SetDebugObjectName(reinterpret_cast<uint64_t>(m_Device), VK_OBJECT_TYPE_DEVICE, "Paradox Device"); 
+        //SetDebugObjectName(reinterpret_cast<uint64_t>(m_DebugMessenger), VK_OBJECT_TYPE_DEBUG_UTILS_MESSENGER_EXT, "Paradox Debug Messenger");
+        VkPhysicalDeviceProperties deviceProperties;
+        vkGetPhysicalDeviceProperties(m_PhysicalDevice, &deviceProperties);
+        SetDebugObjectName(reinterpret_cast<uint64_t>(m_PhysicalDevice), VK_OBJECT_TYPE_PHYSICAL_DEVICE, deviceProperties.deviceName);
+    }
 
     return err;
 }
@@ -166,8 +175,6 @@ VkResult Paradox::Gpu::CreateInstance(const GpuInitInfo* pInitInfo)
 {
     VK_LOG("Creating VkInstance...\n");
 
-   
-
     //Enumerate required instance layers / extensions
     std::vector<const char*> instanceLayers;
     std::vector<const char*> instanceExtensions;
@@ -212,6 +219,7 @@ VkResult Paradox::Gpu::CreateInstance(const GpuInitInfo* pInitInfo)
     VkResult res = vkCreateInstance(&createInfo, m_pAllocationCallbacks, &m_Instance);
 
     Log::Debug("vkCreateInstance(...) -> <0x%08x>\n", m_Instance);
+
     return CheckVkResult(res);
 }
 
@@ -393,8 +401,8 @@ VkResult Paradox::Gpu::AcquirePhyicalDevice()
 
         m_PhysicalDevice = selectedCandidate;
         m_Capabilities = capabilities[m_PhysicalDevice];
-
         Log::Debug("Physical Device Acquired -> <0x%08x>\n", m_PhysicalDevice);
+
     }
     else {  //This shouldn't *really* be possible, but just in case...
         Unreachable();
@@ -499,9 +507,9 @@ VkResult Paradox::Gpu::SetDebugObjectName(const uint64_t handle, const VkObjectT
             if (Gpu::vkSetDebugUtilsObjectNameEXT == nullptr) {
                 return VK_ERROR_EXTENSION_NOT_PRESENT;
             }
-            if (m_EnableDebugUtils) {
-                res = CheckVkResult(Gpu::vkSetDebugUtilsObjectNameEXT(m_Device, &nameInfo));
-            }
+            //if (m_EnableDebugUtils) {
+            res = CheckVkResult(Gpu::vkSetDebugUtilsObjectNameEXT(m_Device, &nameInfo));
+            //}
         }
     }
     return res;
