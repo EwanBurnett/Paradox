@@ -6,6 +6,13 @@
 #include <cstdarg> 
 #include <cstdio> 
 
+//See https://en.cppreference.com/cpp/preprocessor/replace
+#ifdef _MSC_VER
+#define PARADOX_ERROR(message, ...) Paradox::Log::Error(__FILE__, __LINE__, __PRETTY_FUNCTION__, message, ##__VA_ARGS__)
+#else
+#define PARADOX_ERROR(message, ...) Paradox::Log::Error(__FILE__, __LINE__, __PRETTY_FUNCTION__, message __VA_OPT__(,) __VA_ARGS__)
+#endif
+
 namespace Paradox {
     
     enum class ELogColour : uint8_t {

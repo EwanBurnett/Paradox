@@ -13,6 +13,7 @@ int main() {
 
     Paradox::Log::Warning("A warning!\n"); 
     //Paradox::Log::Error(__FILE__, __LINE__, __PRETTY_FUNCTION__, "Something went wrong!\n"); 
+    PARADOX_ERROR("Uh Oh! (%d)\n", 10); 
 
     Paradox::GpuInitInfo initInfo = {}; 
     initInfo.applicationName = "Paradox"; 

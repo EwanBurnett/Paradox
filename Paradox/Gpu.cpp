@@ -12,7 +12,7 @@ PFN_vkSetDebugUtilsObjectNameEXT Paradox::Gpu::vkSetDebugUtilsObjectNameEXT = nu
 
 #define LOAD_VULKAN_FUNCTION(x) { \
     auto fn = (PFN_##x)vkGetInstanceProcAddr(m_Instance, #x);\
-    if(fn != nullptr) Paradox::Gpu::##x = fn; \
+    if(fn != nullptr){ Paradox::Gpu::x = fn; Paradox::Log::Debug("Loaded Vulkan Instance Function " #x " -> <0x%08x>.\n", fn); }\
     else CheckVkResult(VK_ERROR_EXTENSION_NOT_PRESENT, "[Vulkan]\tUnable to load Function " #x " !\n"); \
 }\
 
