@@ -4,7 +4,8 @@
 
 #include <unordered_map>
 #include <vector>
-#include <cstring>|
+#include <cstring>
+#include <assert.h>
 
 #ifdef _MSC_VER
 #define VK_LOG(message, ...) Paradox::Log::Print(Paradox::ELogColour::Magenta, "[Vulkan]\t" message, ##__VA_ARGS__)
@@ -25,41 +26,53 @@ PFN_vkSetDebugUtilsObjectNameEXT Paradox::Gpu::vkSetDebugUtilsObjectNameEXT = nu
 
 
 //TODO: Promote this to a static const?
-static const char* kGpuFeatureCapabilitiesNames[(size_t)Paradox::EGpuFeatureCapabilities::EGpuFeatureCapabilities_MAX] = {
-    "None",
-    "Bindless",
-    "Hardware Ray Tracing (Full)",
-    "Hardware Ray Tracing (Lite)",
-    "Dynamic Rendering",
-    "Invalid!",
+static std::unordered_map<Paradox::EGpuFeatureCapabilities, const char* > kGpuFeatureCapabilitiesNames = {
+    {Paradox::EGpuFeatureCapabilities::None, "None"},
+    {Paradox::EGpuFeatureCapabilities::Bindless, "Bindless"},
+    {Paradox::EGpuFeatureCapabilities::Dynamic_Rendering, "Dynamic Rendering"},
+    {Paradox::EGpuFeatureCapabilities::Hardware_Ray_Tracing_Full, "Hardware Ray Tracing (Full)"},
+    {Paradox::EGpuFeatureCapabilities::Hardware_Ray_Tracing_Lite, "Hardware Ray Tracing (Lite)"},
+    {Paradox::EGpuFeatureCapabilities::EGpuFeatureCapabilities_MAX, "Invalid!"},
+    {Paradox::EGpuFeatureCapabilities::EGpuFeatureCapabilities_COUNT, "Invalid!"},
 };
 
 
 struct FeatureRequirements {
     VkPhysicalDeviceFeatures features = {};
-    VkPhysicalDeviceDescriptorIndexingFeatures descriptorIndexingFeatures = { };
     std::vector<const char*> deviceExtensions;
 };
 
 static const std::unordered_map<Paradox::EGpuFeatureCapabilities, FeatureRequirements> kFeatureRequirements = {
     {
-        Paradox::EGpuFeatureCapabilities::Bindless, {
-            .features = {
-        //.textureCompressionASTC_LDR = VK_TRUE,
-            },
-    .descriptorIndexingFeatures = {
-        .shaderSampledImageArrayNonUniformIndexing = VK_TRUE,  //Enable Non-uniform Array indexing (#extension GL_EXT_nonuniform_qualifier : require)
-        .shaderStorageBufferArrayNonUniformIndexing = VK_TRUE,   //Enable Non-uniform Array indexing (#extension GL_EXT_nonuniform_qualifier : require)
-        .shaderStorageImageArrayNonUniformIndexing = VK_TRUE,  //Enable Non-uniform Array indexing (#extension GL_EXT_nonuniform_qualifier : require)
-        .descriptorBindingSampledImageUpdateAfterBind = VK_TRUE,
-        .descriptorBindingStorageImageUpdateAfterBind = VK_TRUE,
-        .descriptorBindingStorageBufferUpdateAfterBind = VK_TRUE,
-        .descriptorBindingPartiallyBound = VK_TRUE, //Enable unbound descriptor slots
-        .runtimeDescriptorArray = VK_TRUE, //Enable non-sized arrays
+        Paradox::EGpuFeatureCapabilities::None, {
+            .features = {},
+            .deviceExtensions = {VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME, VK_KHR_SHADER_NON_SEMANTIC_INFO_EXTENSION_NAME },
+        }
     },
-    .deviceExtensions = {VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME }, //, VK_EXT_ASTC_DECODE_MODE_EXTENSION_NAME},
-}
-},
+    {
+        Paradox::EGpuFeatureCapabilities::Bindless, {
+            .features = {},
+            .deviceExtensions = {VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME },
+        }
+    },
+    {
+        Paradox::EGpuFeatureCapabilities::Hardware_Ray_Tracing_Full, {
+            .features = {},
+            .deviceExtensions = {VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME, VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME, VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME, VK_KHR_SPIRV_1_4_EXTENSION_NAME, VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME },
+        }
+    },
+    {
+        Paradox::EGpuFeatureCapabilities::Hardware_Ray_Tracing_Lite, {
+            .features = {},
+            .deviceExtensions = {VK_KHR_RAY_QUERY_EXTENSION_NAME, VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME, VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME, VK_KHR_SPIRV_1_4_EXTENSION_NAME, VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME },
+        }
+    },
+    {
+        Paradox::EGpuFeatureCapabilities::Dynamic_Rendering, {
+            .features = {},
+            .deviceExtensions = {VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME},
+        }
+    },
 };
 
 
@@ -74,6 +87,8 @@ Paradox::Gpu::Gpu()
 
     m_DebugMessenger = VK_NULL_HANDLE;
     m_Capabilities = {};
+     
+    m_EnableDebugUtils = false; 
 }
 
 Paradox::ParadoxError Paradox::Gpu::Init(const GpuInitInfo* pInitInfo)
@@ -81,14 +96,27 @@ Paradox::ParadoxError Paradox::Gpu::Init(const GpuInitInfo* pInitInfo)
     Log::Message("[Paradox]\tInitializing GPU...\n");
     ParadoxError err = ParadoxError::Success;
 
+    //Check Default init info.
+    const GpuInitInfo defaultInitInfo = {
+        .applicationName = "Paradox-Application",
+        .applicationVersion = PackVersion(0, 0, 0),
+        .createDebug = true,
+    };
+
+    if (!pInitInfo) {
+        pInitInfo = &defaultInitInfo;
+    }
+
     CreateInstance(pInitInfo);
     LoadInstanceFunctions(pInitInfo);
 
     if (pInitInfo->createDebug) {
+        m_EnableDebugUtils = true; 
         CreateDebugMessenger();
     }
 
     AcquirePhyicalDevice();
+    CreateDevice();
 
 
     return err;
@@ -98,6 +126,7 @@ Paradox::ParadoxError Paradox::Gpu::Shutdown()
 {
     Log::Message("[Paradox]\tShutting Down GPU...\n");
 
+    DestroyDevice();
     DestroyDebugMessenger();
     DestroyInstance();
 
@@ -118,7 +147,8 @@ VkResult Paradox::Gpu::CheckVkResult(const VkResult res, const std::string& msg)
 }
 
 
-VkResult Paradox::Gpu::LoadInstanceFunctions(const GpuInitInfo* pInitInfo) {
+VkResult Paradox::Gpu::LoadInstanceFunctions(const GpuInitInfo* pInitInfo)
+{
     VK_LOG("Loading Instance Functions.\n");
     if (m_Instance == VK_NULL_HANDLE) {
         return CheckVkResult(VK_ERROR_DEVICE_LOST, "Invalid Vulkan Instance!\n");
@@ -136,16 +166,7 @@ VkResult Paradox::Gpu::CreateInstance(const GpuInitInfo* pInitInfo)
 {
     VK_LOG("Creating VkInstance...\n");
 
-    //Check Default init info.
-    const GpuInitInfo defaultInitInfo = {
-        .applicationName = "Paradox-Application",
-        .applicationVersion = PackVersion(0, 0, 0),
-        .createDebug = true,
-    };
-
-    if (!pInitInfo) {
-        pInitInfo = &defaultInitInfo;
-    }
+   
 
     //Enumerate required instance layers / extensions
     std::vector<const char*> instanceLayers;
@@ -301,12 +322,12 @@ VkResult Paradox::Gpu::AcquirePhyicalDevice()
 
 
                     if (!featuresValid) {
-                        Log::Warning("Not all required Physical Device Features were available! [%s]\n", kGpuFeatureCapabilitiesNames[(size_t)featureSet.first]);
+                        Log::Warning("Not all required Physical Device Features were available! [%s]\n", kGpuFeatureCapabilitiesNames[featureSet.first]);
                         capabilities[candidate.first][(size_t)featureSet.first] = 0;
                         continue;
                     }
                     else {
-                        Log::Debug("%s Feature Set Supported!\n", kGpuFeatureCapabilitiesNames[(size_t)featureSet.first]);
+                        Log::Debug("%s Feature Set Supported!\n", kGpuFeatureCapabilitiesNames[featureSet.first]);
                         capabilities[candidate.first][(size_t)featureSet.first] = 1;
                         candidate.second += 1000u;
                     }
@@ -336,14 +357,14 @@ VkResult Paradox::Gpu::AcquirePhyicalDevice()
 
                         //Add the extension to our internal list, if supported. 
                         if (extensionSupported) {
-                            Log::Debug("Enabling Device Extension <%s>.\n", extension);
+                            Log::Debug("Device Extension <%s> Supported!\n", extension);
                             //deviceExtensions.push_back(extension);
                             capabilities[candidate.first][(size_t)featureSet.first] = 1;
                             candidate.second += 1000u;
                         }
                         else {
                             Log::Debug("Extension <%s> is not supported by the current Vulkan Device!\n", extension);
-                            Log::Warning("Not all required Device Extensions were available! [%s]\n", kGpuFeatureCapabilitiesNames[(size_t)featureSet.first]);
+                            Log::Warning("Not all required Device Extensions were available! [%s]\n", kGpuFeatureCapabilitiesNames[featureSet.first]);
                             capabilities[candidate.first][(size_t)featureSet.first] = 0;
 
                             break;
@@ -361,8 +382,9 @@ VkResult Paradox::Gpu::AcquirePhyicalDevice()
             VkPhysicalDeviceProperties deviceProperties;
             vkGetPhysicalDeviceProperties(candidate.first, &deviceProperties);
             Log::Debug("(+%d) %s <0x%08x>\n\t%s\n\tVulkan API Version (%d.%d.%d)\n\tDriver Version (%d.%d.%d)\n", candidate.second, deviceProperties.deviceName, candidate.first, string_VkPhysicalDeviceType(deviceProperties.deviceType), VK_API_VERSION_MAJOR(deviceProperties.apiVersion), VK_API_VERSION_MINOR(deviceProperties.apiVersion), VK_API_VERSION_PATCH(deviceProperties.apiVersion), VK_API_VERSION_MAJOR(deviceProperties.driverVersion), VK_API_VERSION_MINOR(deviceProperties.driverVersion), VK_API_VERSION_PATCH(deviceProperties.driverVersion));
-            for (size_t c = (size_t)EGpuFeatureCapabilities::None; c < 5; ++c) {
-                Log::Debug("[%s] - %s\n", kGpuFeatureCapabilitiesNames[c], capabilities[candidate.first][c] ? "True" : "False"); 
+            for (size_t c = (size_t)EGpuFeatureCapabilities::None; c < (size_t)EGpuFeatureCapabilities::EGpuFeatureCapabilities_COUNT - 1; ++c) {
+                //Log::Debug("[%s] - %s\n", kGpuFeatureCapabilitiesNames[c], capabilities[candidate.first][c] ? "True" : "False");
+                //TODO: 
             }
             if (candidate.second > candidateScore) {
                 selectedCandidate = candidate.first;
@@ -370,7 +392,7 @@ VkResult Paradox::Gpu::AcquirePhyicalDevice()
         }
 
         m_PhysicalDevice = selectedCandidate;
-        m_Capabilities = capabilities[m_PhysicalDevice]; 
+        m_Capabilities = capabilities[m_PhysicalDevice];
 
         Log::Debug("Physical Device Acquired -> <0x%08x>\n", m_PhysicalDevice);
     }
@@ -380,6 +402,47 @@ VkResult Paradox::Gpu::AcquirePhyicalDevice()
     }
 
     return CheckVkResult(m_PhysicalDevice != VK_NULL_HANDLE ? VK_SUCCESS : VK_ERROR_DEVICE_LOST);
+}
+
+VkResult Paradox::Gpu::CreateDevice()
+{
+    VK_LOG("Creating Device...\n");
+
+    const VkPhysicalDeviceDescriptorIndexingFeatures descriptorIndexingFeatures = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES,
+        .pNext = nullptr,
+        .shaderSampledImageArrayNonUniformIndexing = VK_TRUE,  //Enable Non-uniform Array indexing (#extension GL_EXT_nonuniform_qualifier : require)
+        .shaderStorageBufferArrayNonUniformIndexing = VK_TRUE,   //Enable Non-uniform Array indexing (#extension GL_EXT_nonuniform_qualifier : require)
+        .shaderStorageImageArrayNonUniformIndexing = VK_TRUE,  //Enable Non-uniform Array indexing (#extension GL_EXT_nonuniform_qualifier : require)
+        .descriptorBindingSampledImageUpdateAfterBind = VK_TRUE,
+        .descriptorBindingStorageImageUpdateAfterBind = VK_TRUE,
+        .descriptorBindingStorageBufferUpdateAfterBind = VK_TRUE,
+        .descriptorBindingPartiallyBound = VK_TRUE, //Enable unbound descriptor slots
+        .runtimeDescriptorArray = VK_TRUE, //Enable non-sized arrays
+    };
+
+
+    //Create the device. 
+    const VkDeviceCreateInfo createInfo = {
+        .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+        .pNext = nullptr, //&descriptorIndexingFeatures //TODO: pNext chain
+        .flags = 0,
+    };
+
+    VkResult res = CheckVkResult(vkCreateDevice(m_PhysicalDevice, &createInfo, m_pAllocationCallbacks, &m_Device), "Failed to Create Device!\n");
+
+    Log::Debug("vkCreateDevice(...) -> <0x%08x>\n", m_Device);
+    return res;
+}
+
+void Paradox::Gpu::DestroyDevice()
+{
+    VK_LOG("Destroying Device...\n");
+
+    if (m_Device != VK_NULL_HANDLE) {
+        vkDestroyDevice(m_Device, m_pAllocationCallbacks);
+        m_Device = VK_NULL_HANDLE;
+    }
 }
 
 VkResult Paradox::Gpu::CreateDebugMessenger()
@@ -416,6 +479,32 @@ void Paradox::Gpu::DestroyDebugMessenger()
         Gpu::vkDestroyDebugUtilsMessengerEXT(m_Instance, m_DebugMessenger, m_pAllocationCallbacks);
         m_DebugMessenger = nullptr;
     }
+}
+
+VkResult Paradox::Gpu::SetDebugObjectName(const uint64_t handle, const VkObjectType type, const std::string& name) const
+{
+    VkResult res = VK_SUCCESS;
+    if (m_EnableDebugUtils) {
+        if (!name.empty()) {
+            Log::Debug("Setting %s <0x%08x> name to %s.\n", string_VkObjectType(type), handle, name.c_str());
+
+            const VkDebugUtilsObjectNameInfoEXT nameInfo = {
+                .sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT,
+                .pNext = nullptr,
+                .objectType = type,
+                .objectHandle = handle,
+                .pObjectName = name.c_str()
+            };
+            assert(Gpu::vkSetDebugUtilsObjectNameEXT != nullptr);
+            if (Gpu::vkSetDebugUtilsObjectNameEXT == nullptr) {
+                return VK_ERROR_EXTENSION_NOT_PRESENT;
+            }
+            if (m_EnableDebugUtils) {
+                res = CheckVkResult(Gpu::vkSetDebugUtilsObjectNameEXT(m_Device, &nameInfo));
+            }
+        }
+    }
+    return res;
 }
 
 VKAPI_ATTR VkBool32 VKAPI_CALL Paradox::Gpu::DebugMessengerCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, VkDebugUtilsMessageTypeFlagsEXT messageType, const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData, void* pUserData)

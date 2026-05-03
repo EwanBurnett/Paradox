@@ -22,7 +22,8 @@ namespace Paradox {
         Hardware_Ray_Tracing_Lite = (1 << 2),
         Dynamic_Rendering = (1 << 3),
 
-        EGpuFeatureCapabilities_MAX
+        EGpuFeatureCapabilities_MAX,
+        EGpuFeatureCapabilities_COUNT = 6
     };
 
     /**
@@ -76,6 +77,7 @@ namespace Paradox {
 
         VkDebugUtilsMessengerEXT m_DebugMessenger;
         std::bitset<(size_t)EGpuFeatureCapabilities::EGpuFeatureCapabilities_MAX> m_Capabilities; 
+        bool m_EnableDebugUtils; 
 
     private:
         static PFN_vkCreateDebugUtilsMessengerEXT vkCreateDebugUtilsMessengerEXT;
