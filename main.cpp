@@ -15,10 +15,11 @@ int main() {
     //Paradox::Log::Error(__FILE__, __LINE__, __PRETTY_FUNCTION__, "Something went wrong!\n"); 
     PARADOX_ERROR("Uh Oh! (%d)\n", 10); 
 
-    Paradox::GpuInitInfo initInfo = {}; 
-    initInfo.applicationName = "Paradox"; 
-    initInfo.applicationVersion = PackVersion(1, 0, 0); 
-    initInfo.createDebug = true;
+    const Paradox::GpuInitInfo initInfo = {
+        .applicationName = "Paradox",
+        .applicationVersion = PackVersion(1, 0, 0),
+        .createDebug = true,
+    };
 
     Paradox::ParadoxError err; 
     

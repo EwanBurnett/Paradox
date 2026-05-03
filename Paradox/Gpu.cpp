@@ -5,6 +5,12 @@
 #include <unordered_map>
 #include <vector>
 
+#ifdef _MSC_VER
+#define VK_LOG(message, ...) Paradox::Log::Print(Paradox::ELogColour::Magenta, "[Vulkan]\t" message, ##__VA_ARGS__)
+#else
+#define VK_LOG(message, ...) Paradox::Log::Print(Paradox::ELogColour::Magenta, "[Vulkan]\t" message __VA_OPT__(,) __VA_ARGS__)
+#endif
+
 //Extension Functions
 PFN_vkCreateDebugUtilsMessengerEXT Paradox::Gpu::vkCreateDebugUtilsMessengerEXT = nullptr;
 PFN_vkDestroyDebugUtilsMessengerEXT Paradox::Gpu::vkDestroyDebugUtilsMessengerEXT = nullptr;
@@ -13,7 +19,7 @@ PFN_vkSetDebugUtilsObjectNameEXT Paradox::Gpu::vkSetDebugUtilsObjectNameEXT = nu
 #define LOAD_VULKAN_FUNCTION(x) { \
     auto fn = (PFN_##x)vkGetInstanceProcAddr(m_Instance, #x);\
     if(fn != nullptr){ Paradox::Gpu::x = fn; Paradox::Log::Debug("Loaded Vulkan Instance Function " #x " -> <0x%08x>.\n", fn); }\
-    else CheckVkResult(VK_ERROR_EXTENSION_NOT_PRESENT, "[Vulkan]\tUnable to load Function " #x " !\n"); \
+    else CheckVkResult(VK_ERROR_EXTENSION_NOT_PRESENT, "Unable to load Function " #x " !\n"); \
 }\
 
 Paradox::Gpu::Gpu()
@@ -59,14 +65,14 @@ Paradox::ParadoxError Paradox::Gpu::Shutdown()
 VkResult Paradox::Gpu::CheckVkResult(const VkResult res, const std::string& msg)
 {
     if (res < VK_SUCCESS) {
-        Log::Warning("VkResult Failed! [%s]\t%s\n", string_VkResult(res), msg.c_str());
+        PARADOX_ERROR("VkResult Failed! [%s]\t%s\n", string_VkResult(res), msg.c_str());
     }
     return res;
 }
 
 
 VkResult Paradox::Gpu::LoadInstanceFunctions(const GpuInitInfo* pInitInfo) {
-    Log::Print(ELogColour::Magenta, "[Vulkan]\tLoading Instance Functions.\n");
+    VK_LOG("Loading Instance Functions.\n");
     if (m_Instance == VK_NULL_HANDLE) {
         return CheckVkResult(VK_ERROR_DEVICE_LOST, "Invalid Vulkan Instance!\n");
     }
@@ -81,7 +87,7 @@ VkResult Paradox::Gpu::LoadInstanceFunctions(const GpuInitInfo* pInitInfo) {
 
 VkResult Paradox::Gpu::CreateInstance(const GpuInitInfo* pInitInfo)
 {
-    Log::Print(ELogColour::Magenta, "[Vulkan]\tCreating VkInstance...\n");
+    VK_LOG("Creating VkInstance...\n");
 
     //Check Default init info.
     const GpuInitInfo defaultInitInfo = {
@@ -138,12 +144,12 @@ VkResult Paradox::Gpu::CreateInstance(const GpuInitInfo* pInitInfo)
     VkResult res = vkCreateInstance(&createInfo, m_pAllocationCallbacks, &m_Instance);
 
     Log::Debug("vkCreateInstance(...) -> <0x%08x>\n", m_Instance);
-    return res;
+    return CheckVkResult(res);
 }
 
 void Paradox::Gpu::DestroyInstance()
 {
-    Log::Print(ELogColour::Magenta, "[Vulkan]\tDestroying VkInstance...\n");
+    VK_LOG("Destroying VkInstance...\n");
 
     if (m_Instance != VK_NULL_HANDLE) {
         vkDestroyInstance(m_Instance, m_pAllocationCallbacks);
@@ -153,8 +159,7 @@ void Paradox::Gpu::DestroyInstance()
 
 VkResult Paradox::Gpu::AcquirePhyicalDevice()
 {
-    Log::Print(ELogColour::Magenta, "[Vulkan]\tSelecting a Physical Device...\n");
-
+    VK_LOG("Selecting a Physical Device...\n");
 
     //Evaluate Physical Device feature support. 
     VkPhysicalDeviceFeatures requiredFeatures = {};
@@ -169,7 +174,7 @@ VkResult Paradox::Gpu::AcquirePhyicalDevice()
     }
 
     //Prefer Discrete GPUs -> Integrated GPUs -> CPUs -> Software Driver
-      //Require Vulkan 1.0 support. 
+    //Require Vulkan 1.2 support. 
     VkPhysicalDevice deviceCandidate = VK_NULL_HANDLE;
     VkPhysicalDeviceType candidateType = VK_PHYSICAL_DEVICE_TYPE_MAX_ENUM;
     {
@@ -247,13 +252,12 @@ VkResult Paradox::Gpu::AcquirePhyicalDevice()
 
     Log::Debug("Physical Device Acquired -> <0x%08x>\n", m_PhysicalDevice);
 
-
-    return m_PhysicalDevice != VK_NULL_HANDLE ? VK_SUCCESS : VK_ERROR_DEVICE_LOST;
+    return CheckVkResult(m_PhysicalDevice != VK_NULL_HANDLE ? VK_SUCCESS : VK_ERROR_DEVICE_LOST);
 }
 
 VkResult Paradox::Gpu::CreateDebugMessenger()
 {
-    Log::Print(ELogColour::Magenta, "[Vulkan]\tCreating Debug Utils Messenger...\n");
+    VK_LOG("Creating Debug Utils Messenger...\n");
     if (m_Instance == VK_NULL_HANDLE) {
         return CheckVkResult(VK_ERROR_DEVICE_LOST, "Invalid Vulkan Instance!\n");
     }
@@ -271,7 +275,7 @@ VkResult Paradox::Gpu::CreateDebugMessenger()
     VkResult res = Gpu::vkCreateDebugUtilsMessengerEXT(m_Instance, &debugMessengerCreateInfo, m_pAllocationCallbacks, &m_DebugMessenger);
 
     Log::Debug("vkCreateDebugUtilsMessengerEXT(...) -> <0x%08x>\n", m_DebugMessenger);
-    return res;
+    return CheckVkResult(res); 
 }
 
 void Paradox::Gpu::DestroyDebugMessenger()
@@ -289,6 +293,6 @@ void Paradox::Gpu::DestroyDebugMessenger()
 
 VKAPI_ATTR VkBool32 VKAPI_CALL Paradox::Gpu::DebugMessengerCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, VkDebugUtilsMessageTypeFlagsEXT messageType, const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData, void* pUserData)
 {
-    Log::Print(ELogColour::LightMagenta, "[%d : %s]\t%s\n", pCallbackData->messageIdNumber, pCallbackData->pMessageIdName, pCallbackData->pMessage);
+    Log::Print(ELogColour::LightMagenta, "%s\n", pCallbackData->pMessage);
     return VK_FALSE;
 }

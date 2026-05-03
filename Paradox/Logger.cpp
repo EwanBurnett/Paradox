@@ -55,6 +55,7 @@ void Paradox::Log::Message(const char* fmt, ...)
 
 void Paradox::Log::Debug(const char* fmt, ...)
 {
+#if DEBUG | _DEBUG
     //Update the console colour. 
     SetConsoleColour(ELogColour::LightGreen);
 
@@ -66,6 +67,7 @@ void Paradox::Log::Debug(const char* fmt, ...)
 
     //Reset the console colour. 
     SetConsoleColour(ELogColour::White);
+#endif
 }
 
 void Paradox::Log::Warning(const char* fmt, ...)
