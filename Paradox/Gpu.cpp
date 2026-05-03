@@ -6,7 +6,10 @@
 #include <vector>
 #include <cstring>
 #include <assert.h>
+#include <set> 
 #include "Profiler.h"
+
+#include "Window.h"
 
 #ifdef _MSC_VER
 #define VK_LOG(message, ...) Paradox::Log::Print(Paradox::ELogColour::Magenta, "[Vulkan]\t" message, ##__VA_ARGS__)
@@ -124,7 +127,7 @@ Paradox::ParadoxError Paradox::Gpu::Init(const GpuInitInfo* pInitInfo)
     //Set debug object names 
     {
         SetDebugObjectName(reinterpret_cast<uint64_t>(m_Instance), VK_OBJECT_TYPE_INSTANCE, "Paradox Instance");
-        SetDebugObjectName(reinterpret_cast<uint64_t>(m_Device), VK_OBJECT_TYPE_DEVICE, "Paradox Device"); 
+        SetDebugObjectName(reinterpret_cast<uint64_t>(m_Device), VK_OBJECT_TYPE_DEVICE, "Paradox Device");
         //SetDebugObjectName(reinterpret_cast<uint64_t>(m_DebugMessenger), VK_OBJECT_TYPE_DEBUG_UTILS_MESSENGER_EXT, "Paradox Debug Messenger");
         VkPhysicalDeviceProperties deviceProperties;
         vkGetPhysicalDeviceProperties(m_PhysicalDevice, &deviceProperties);
@@ -154,7 +157,7 @@ std::bitset<(size_t)Paradox::EGpuFeatureCapabilities::EGpuFeatureCapabilities_MA
 
 VkResult Paradox::Gpu::CheckVkResult(const VkResult res, const std::string& msg)
 {
-    VulkanZoneScoped; 
+    VulkanZoneScoped;
     if (res < VK_SUCCESS) {
         PARADOX_ERROR("VkResult Failed! [%s]\t%s\n", string_VkResult(res), msg.c_str());
     }
@@ -164,7 +167,7 @@ VkResult Paradox::Gpu::CheckVkResult(const VkResult res, const std::string& msg)
 
 VkResult Paradox::Gpu::LoadInstanceFunctions(const GpuInitInfo* pInitInfo)
 {
-    VulkanZoneScoped; 
+    VulkanZoneScoped;
     VK_LOG("Loading Instance Functions.\n");
     if (m_Instance == VK_NULL_HANDLE) {
         return CheckVkResult(VK_ERROR_DEVICE_LOST, "Invalid Vulkan Instance!\n");
@@ -180,12 +183,21 @@ VkResult Paradox::Gpu::LoadInstanceFunctions(const GpuInitInfo* pInitInfo)
 
 VkResult Paradox::Gpu::CreateInstance(const GpuInitInfo* pInitInfo)
 {
-    VulkanZoneScoped; 
+    VulkanZoneScoped;
     VK_LOG("Creating VkInstance...\n");
 
     //Enumerate required instance layers / extensions
     std::vector<const char*> instanceLayers;
     std::vector<const char*> instanceExtensions;
+
+#if WIN32 | __linux__
+    //Get GLFW required extensions
+    uint32_t count = 0;
+    const char** glfwExtensions = glfwGetRequiredInstanceExtensions(&count);
+    for (uint32_t i = 0; i < count; ++i) {
+        instanceExtensions.push_back(glfwExtensions[i]);
+    }
+#endif
 
     const VkDebugUtilsMessengerCreateInfoEXT debugMessengerCreateInfo = {
         .sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
@@ -213,6 +225,10 @@ VkResult Paradox::Gpu::CreateInstance(const GpuInitInfo* pInitInfo)
         .apiVersion = VK_API_VERSION_1_2,
     };
 
+    for (auto& ext : instanceExtensions) {
+        Log::Debug("Enabling Instance Extension %s.\n", ext);
+    }
+
     //Create the instance. 
     const VkInstanceCreateInfo createInfo = {
         .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
@@ -233,7 +249,7 @@ VkResult Paradox::Gpu::CreateInstance(const GpuInitInfo* pInitInfo)
 
 void Paradox::Gpu::DestroyInstance()
 {
-    VulkanZoneScoped; 
+    VulkanZoneScoped;
     VK_LOG("Destroying VkInstance...\n");
 
     if (m_Instance != VK_NULL_HANDLE) {
@@ -244,7 +260,7 @@ void Paradox::Gpu::DestroyInstance()
 
 VkResult Paradox::Gpu::AcquirePhyicalDevice()
 {
-    VulkanZoneScoped; 
+    VulkanZoneScoped;
     VK_LOG("Selecting a Physical Device...\n");
 
     //Enumerate existing physical devices
@@ -424,7 +440,7 @@ VkResult Paradox::Gpu::AcquirePhyicalDevice()
 
 VkResult Paradox::Gpu::CreateDevice()
 {
-    VulkanZoneScoped; 
+    VulkanZoneScoped;
     VK_LOG("Creating Device...\n");
 
     const VkPhysicalDeviceDescriptorIndexingFeatures descriptorIndexingFeatures = {
@@ -441,11 +457,106 @@ VkResult Paradox::Gpu::CreateDevice()
     };
 
 
+    std::vector<const char*> deviceExtensions;
+    //Get feature set extensions
+    std::set<std::string> featureExtensions = {};
+    {
+        for (const auto& featureSet : kFeatureRequirements) {
+            if (m_Capabilities[(size_t)featureSet.first]) {
+                Log::Debug("Loading Extensions for Feature [%s]\n", kGpuFeatureCapabilitiesNames[featureSet.first]);
+
+                for (auto& ext : featureSet.second.deviceExtensions) {
+                    Log::Debug("\t--[%s]\n", ext);
+                    featureExtensions.emplace(ext);
+                }
+            }
+        }
+
+        for (auto& ext : featureExtensions) {
+            deviceExtensions.push_back(ext.c_str());
+        }
+    }
+
+    //Configure device features. 
+    VkPhysicalDeviceAccelerationStructureFeaturesKHR accelerationStructureFeatures = {
+       .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR,
+       .pNext = nullptr,
+       .accelerationStructure = m_Capabilities[(size_t)EGpuFeatureCapabilities::Ray_Tracing_Pipeline] || m_Capabilities[(size_t)EGpuFeatureCapabilities::Ray_Query] ? VK_TRUE : VK_FALSE,
+    };
+
+    VkPhysicalDeviceRayQueryFeaturesKHR rayQueryFeatures = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_QUERY_FEATURES_KHR,
+        .pNext = &accelerationStructureFeatures,
+        .rayQuery = m_Capabilities[(size_t)EGpuFeatureCapabilities::Ray_Query] ? VK_TRUE : VK_FALSE,
+    };
+
+    VkPhysicalDeviceRayTracingPipelineFeaturesKHR rayTracingPipelineFeatures = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR,
+        .pNext = &rayQueryFeatures,
+        .rayTracingPipeline = m_Capabilities[(size_t)EGpuFeatureCapabilities::Ray_Tracing_Pipeline] ? VK_TRUE : VK_FALSE,
+    };
+
+    VkPhysicalDeviceVulkan12Features vulkan_1_2_features = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
+        .pNext = &rayTracingPipelineFeatures,
+
+        .descriptorIndexing = m_Capabilities[(size_t)EGpuFeatureCapabilities::Bindless] ? VK_TRUE : VK_FALSE,
+        .shaderUniformBufferArrayNonUniformIndexing = m_Capabilities[(size_t)EGpuFeatureCapabilities::Bindless] ? VK_TRUE : VK_FALSE,
+        .shaderSampledImageArrayNonUniformIndexing = m_Capabilities[(size_t)EGpuFeatureCapabilities::Bindless] ? VK_TRUE : VK_FALSE,
+        .shaderStorageBufferArrayNonUniformIndexing = m_Capabilities[(size_t)EGpuFeatureCapabilities::Bindless] ? VK_TRUE : VK_FALSE,
+        .descriptorBindingPartiallyBound = m_Capabilities[(size_t)EGpuFeatureCapabilities::Bindless] ? VK_TRUE : VK_FALSE,
+        .bufferDeviceAddress = m_Capabilities[(size_t)EGpuFeatureCapabilities::Bindless] ? VK_TRUE : VK_FALSE,
+    };
+
+    const VkPhysicalDeviceFeatures2 deviceFeatures{
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
+        .pNext = &vulkan_1_2_features,
+        .features = {}, //TODO: feature set union! 
+    };
+
+    //TODO: Expose n device queues!!!
+    auto FindGraphicsQueueFamilyIndex = [](VkPhysicalDevice physicalDevice) -> uint32_t {
+
+        uint32_t propCount = 0;
+        vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &propCount, nullptr);
+        std::vector<VkQueueFamilyProperties> properties(propCount);
+        vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &propCount, properties.data());
+
+        uint32_t index = 0;
+        for (const auto& p : properties) {
+
+            if (p.queueFlags & VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT) {
+                return index;
+            }
+            index++;
+        }
+
+        return 0;
+        };
+
+    uint32_t qfi = FindGraphicsQueueFamilyIndex(m_PhysicalDevice);
+
+    //Expose 1 Graphics Queue for now.
+    float priority = 1.0f;
+    VkDeviceQueueCreateInfo queueCreateInfo = {
+        .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = 0,
+        .queueFamilyIndex = qfi,
+        .queueCount = 1,
+        .pQueuePriorities = &priority
+    };
+
+
     //Create the device. 
     const VkDeviceCreateInfo createInfo = {
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
-        .pNext = nullptr, //&descriptorIndexingFeatures //TODO: pNext chain
+        .pNext = &deviceFeatures,
         .flags = 0,
+        .queueCreateInfoCount = 1,
+        .pQueueCreateInfos = &queueCreateInfo,
+        .enabledExtensionCount = static_cast<uint32_t>(deviceExtensions.size()),
+        .ppEnabledExtensionNames = deviceExtensions.data(),
     };
 
     VkResult res = CheckVkResult(vkCreateDevice(m_PhysicalDevice, &createInfo, m_pAllocationCallbacks, &m_Device), "Failed to Create Device!\n");
@@ -456,7 +567,7 @@ VkResult Paradox::Gpu::CreateDevice()
 
 void Paradox::Gpu::DestroyDevice()
 {
-    VulkanZoneScoped; 
+    VulkanZoneScoped;
     VK_LOG("Destroying Device...\n");
 
     if (m_Device != VK_NULL_HANDLE) {
@@ -467,7 +578,7 @@ void Paradox::Gpu::DestroyDevice()
 
 VkResult Paradox::Gpu::CreateDebugMessenger()
 {
-    VulkanZoneScoped; 
+    VulkanZoneScoped;
     VK_LOG("Creating Debug Utils Messenger...\n");
     if (m_Instance == VK_NULL_HANDLE) {
         return CheckVkResult(VK_ERROR_DEVICE_LOST, "Invalid Vulkan Instance!\n");
@@ -491,7 +602,7 @@ VkResult Paradox::Gpu::CreateDebugMessenger()
 
 void Paradox::Gpu::DestroyDebugMessenger()
 {
-    VulkanZoneScoped; 
+    VulkanZoneScoped;
     if (m_Instance == VK_NULL_HANDLE) {
         CheckVkResult(VK_ERROR_DEVICE_LOST, "Invalid Vulkan Instance!\n");
         return;
@@ -505,7 +616,7 @@ void Paradox::Gpu::DestroyDebugMessenger()
 
 VkResult Paradox::Gpu::SetDebugObjectName(const uint64_t handle, const VkObjectType type, const std::string& name) const
 {
-    VulkanZoneScoped; 
+    VulkanZoneScoped;
     VkResult res = VK_SUCCESS;
     if (m_EnableDebugUtils) {
         if (!name.empty()) {
@@ -532,7 +643,7 @@ VkResult Paradox::Gpu::SetDebugObjectName(const uint64_t handle, const VkObjectT
 
 VKAPI_ATTR VkBool32 VKAPI_CALL Paradox::Gpu::DebugMessengerCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, VkDebugUtilsMessageTypeFlagsEXT messageType, const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData, void* pUserData)
 {
-    VulkanZoneScoped; 
+    VulkanZoneScoped;
     Log::Print(ELogColour::LightMagenta, "%s\n", pCallbackData->pMessage);
     return VK_FALSE;
 }
