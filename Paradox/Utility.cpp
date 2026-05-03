@@ -1,5 +1,6 @@
 #include "Utility.h"
 #include "Logger.h"
+#include "Profiler.h"
 
 static const std::unordered_map<Paradox::ParadoxError, const char*> kErrorMappings{
     {Paradox::ParadoxError::Success, "Success"},
@@ -7,10 +8,11 @@ static const std::unordered_map<Paradox::ParadoxError, const char*> kErrorMappin
     {Paradox::ParadoxError::InitializationFailed, "Initialization Failed"},
     {Paradox::ParadoxError::NotImplemented, "Not Implemented"},
     {Paradox::ParadoxError::ParadoxError_MAX, "Undefined"},
-    
+
 };
 
 Paradox::ParadoxError Paradox::CheckError(const Paradox::ParadoxError err) {
+    ParadoxZoneScoped;
     if (err <= Paradox::ParadoxError::Failed) {
         Log::Print(ELogColour::LightMagenta, "[Paradox] Internal Error - %s\n", GetErrorString(err).c_str());
     }
@@ -20,9 +22,10 @@ Paradox::ParadoxError Paradox::CheckError(const Paradox::ParadoxError err) {
 
 std::string Paradox::GetErrorString(const ParadoxError err)
 {
+    ParadoxZoneScoped;
     if (err > ParadoxError::ParadoxError_MAX) {
-        return { "Undefined" }; 
+        return { "Undefined" };
     }
 
-    return kErrorMappings.at(err); 
+    return kErrorMappings.at(err);
 }

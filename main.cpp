@@ -3,6 +3,7 @@
 
 #include "Paradox/Gpu.h"
 #include "Paradox/Logger.h"
+#include "Paradox/Profiler.h"
 
 int main() {
     /*
@@ -11,7 +12,7 @@ int main() {
         Paradox::Log::Print((Paradox::ELogColour)i, "Hello, RT!\t[%d]\n", i);
     }
 
-    Paradox::Log::Warning("A warning!\n"); 
+    Paradox::Log::Warning("A warning!\n");
     //Paradox::Log::Error(__FILE__, __LINE__, __PRETTY_FUNCTION__, "Something went wrong!\n"); 
 
     const Paradox::GpuInitInfo initInfo = {
@@ -20,16 +21,26 @@ int main() {
         .createDebug = true,
     };
 
-    Paradox::ParadoxError err; 
-    
-    Paradox::Gpu gpu; 
-    err = gpu.Init(&initInfo); 
+    Paradox::ParadoxError err;
 
-    Paradox::CheckError(err); 
+    Paradox::Gpu gpu;
+    err = gpu.Init(&initInfo);
+
+    Paradox::CheckError(err);
     //Paradox::Log::Print(Paradox::ELogColour::Blue, Paradox::GetErrorString(err).c_str()); 
 
+    uint64_t frameIdx = 0;
+    while (true) {
+        {
+            ParadoxZoneScoped; 
+            Paradox::Log::Print(Paradox::ELogColour::Cyan, "Frame %d               \r", frameIdx++);
+        }
 
-    gpu.Shutdown(); 
+        Paradox::Profiler::EndFrame;
+    }
 
-    return 0;     
+
+    gpu.Shutdown();
+
+    return 0;
 }

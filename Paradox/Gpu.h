@@ -18,8 +18,8 @@ namespace Paradox {
         None = 0, 
 
         Bindless = (1 << 0), 
-        Hardware_Ray_Tracing_Full = (1 << 1),
-        Hardware_Ray_Tracing_Lite = (1 << 2),
+        Ray_Tracing_Pipeline = (1 << 1),
+        Ray_Query = (1 << 2),
         Dynamic_Rendering = (1 << 3),
 
         EGpuFeatureCapabilities_MAX,

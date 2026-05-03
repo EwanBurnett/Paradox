@@ -2,6 +2,7 @@
 #include <map> 
 #include <assert.h>
 #include <cstring>
+#include "Profiler.h"
 
 /**
  * @brief Maps Log Colours to their ANSI 8-Bit Foreground Console Text attributes.
@@ -27,6 +28,7 @@ const std::map<Paradox::ELogColour, int32_t> kColourMappings{
 
 void Paradox::Log::Print(const ELogColour colour, const char* fmt, ...)
 {
+    SystemZoneScoped;
     //Update the console colour. 
     SetConsoleColour(colour);
 
@@ -41,6 +43,7 @@ void Paradox::Log::Print(const ELogColour colour, const char* fmt, ...)
 
 void Paradox::Log::Message(const char* fmt, ...)
 {
+    SystemZoneScoped;
     //Update the console colour. 
     SetConsoleColour(ELogColour::LightBlue);
 
@@ -55,6 +58,7 @@ void Paradox::Log::Message(const char* fmt, ...)
 
 void Paradox::Log::Debug(const char* fmt, ...)
 {
+    SystemZoneScoped;
 #if DEBUG | _DEBUG
     //Update the console colour. 
     SetConsoleColour(ELogColour::LightGreen);
@@ -72,6 +76,7 @@ void Paradox::Log::Debug(const char* fmt, ...)
 
 void Paradox::Log::Warning(const char* fmt, ...)
 {
+    SystemZoneScoped;
     //Update the console colour. 
     SetConsoleColour(ELogColour::Yellow);
 
@@ -87,6 +92,7 @@ void Paradox::Log::Warning(const char* fmt, ...)
 
 void Paradox::Log::Error(const char* file, const size_t line, const char* function, const char* fmt, ...)
 {
+    SystemZoneScoped;
     //Update the console colour. 
     SetConsoleColour(ELogColour::LightRed);
 
@@ -105,6 +111,7 @@ void Paradox::Log::Error(const char* file, const size_t line, const char* functi
 
 void Paradox::Log::SetConsoleColour(const ELogColour colour)
 {
+    SystemZoneScoped;
     //Trap invalid colours. 
     if (colour >= ELogColour::ELogColour_MAX) {
         Unreachable();
@@ -121,6 +128,7 @@ void Paradox::Log::SetConsoleColour(const ELogColour colour)
 
 void Paradox::Log::Output(const char* fmt, va_list args)
 {
+    SystemZoneScoped;
     if (fmt == nullptr) {
         return;
     }
@@ -130,6 +138,7 @@ void Paradox::Log::Output(const char* fmt, va_list args)
 
 void Paradox::Log::Output(const char* fmt, ...)
 {
+    SystemZoneScoped;
     va_list args;
     va_start(args, fmt);
     Output(fmt, args);

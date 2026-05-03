@@ -6,6 +6,7 @@
 #include <vector>
 #include <cstring>
 #include <assert.h>
+#include "Profiler.h"
 
 #ifdef _MSC_VER
 #define VK_LOG(message, ...) Paradox::Log::Print(Paradox::ELogColour::Magenta, "[Vulkan]\t" message, ##__VA_ARGS__)
@@ -30,8 +31,8 @@ static std::unordered_map<Paradox::EGpuFeatureCapabilities, const char* > kGpuFe
     {Paradox::EGpuFeatureCapabilities::None, "None"},
     {Paradox::EGpuFeatureCapabilities::Bindless, "Bindless"},
     {Paradox::EGpuFeatureCapabilities::Dynamic_Rendering, "Dynamic Rendering"},
-    {Paradox::EGpuFeatureCapabilities::Hardware_Ray_Tracing_Full, "Hardware Ray Tracing (Full)"},
-    {Paradox::EGpuFeatureCapabilities::Hardware_Ray_Tracing_Lite, "Hardware Ray Tracing (Lite)"},
+    {Paradox::EGpuFeatureCapabilities::Ray_Tracing_Pipeline, "Ray Tracing Pipeline"},
+    {Paradox::EGpuFeatureCapabilities::Ray_Query, "Ray Query"},
     {Paradox::EGpuFeatureCapabilities::EGpuFeatureCapabilities_MAX, "Invalid!"},
     {Paradox::EGpuFeatureCapabilities::EGpuFeatureCapabilities_COUNT, "Invalid!"},
 };
@@ -56,13 +57,13 @@ static const std::unordered_map<Paradox::EGpuFeatureCapabilities, FeatureRequire
         }
     },
     {
-        Paradox::EGpuFeatureCapabilities::Hardware_Ray_Tracing_Full, {
+        Paradox::EGpuFeatureCapabilities::Ray_Tracing_Pipeline, {
             .features = {},
             .deviceExtensions = {VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME, VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME, VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME, VK_KHR_SPIRV_1_4_EXTENSION_NAME, VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME },
         }
     },
     {
-        Paradox::EGpuFeatureCapabilities::Hardware_Ray_Tracing_Lite, {
+        Paradox::EGpuFeatureCapabilities::Ray_Query, {
             .features = {},
             .deviceExtensions = {VK_KHR_RAY_QUERY_EXTENSION_NAME, VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME, VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME, VK_KHR_SPIRV_1_4_EXTENSION_NAME, VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME },
         }
@@ -78,6 +79,7 @@ static const std::unordered_map<Paradox::EGpuFeatureCapabilities, FeatureRequire
 
 Paradox::Gpu::Gpu()
 {
+    ParadoxZoneScoped;
     m_Instance = VK_NULL_HANDLE;
     m_PhysicalDevice = VK_NULL_HANDLE;
     m_Device = VK_NULL_HANDLE;
@@ -93,6 +95,7 @@ Paradox::Gpu::Gpu()
 
 Paradox::ParadoxError Paradox::Gpu::Init(const GpuInitInfo* pInitInfo)
 {
+    ParadoxZoneScoped;
     Log::Message("[Paradox]\tInitializing GPU...\n");
     ParadoxError err = ParadoxError::Success;
 
@@ -133,6 +136,7 @@ Paradox::ParadoxError Paradox::Gpu::Init(const GpuInitInfo* pInitInfo)
 
 Paradox::ParadoxError Paradox::Gpu::Shutdown()
 {
+    ParadoxZoneScoped;
     Log::Message("[Paradox]\tShutting Down GPU...\n");
 
     DestroyDevice();
@@ -144,11 +148,13 @@ Paradox::ParadoxError Paradox::Gpu::Shutdown()
 
 std::bitset<(size_t)Paradox::EGpuFeatureCapabilities::EGpuFeatureCapabilities_MAX> Paradox::Gpu::GetCapabilities() const
 {
+    ParadoxZoneScoped;
     return m_Capabilities;
 }
 
 VkResult Paradox::Gpu::CheckVkResult(const VkResult res, const std::string& msg)
 {
+    VulkanZoneScoped; 
     if (res < VK_SUCCESS) {
         PARADOX_ERROR("VkResult Failed! [%s]\t%s\n", string_VkResult(res), msg.c_str());
     }
@@ -158,6 +164,7 @@ VkResult Paradox::Gpu::CheckVkResult(const VkResult res, const std::string& msg)
 
 VkResult Paradox::Gpu::LoadInstanceFunctions(const GpuInitInfo* pInitInfo)
 {
+    VulkanZoneScoped; 
     VK_LOG("Loading Instance Functions.\n");
     if (m_Instance == VK_NULL_HANDLE) {
         return CheckVkResult(VK_ERROR_DEVICE_LOST, "Invalid Vulkan Instance!\n");
@@ -173,6 +180,7 @@ VkResult Paradox::Gpu::LoadInstanceFunctions(const GpuInitInfo* pInitInfo)
 
 VkResult Paradox::Gpu::CreateInstance(const GpuInitInfo* pInitInfo)
 {
+    VulkanZoneScoped; 
     VK_LOG("Creating VkInstance...\n");
 
     //Enumerate required instance layers / extensions
@@ -225,6 +233,7 @@ VkResult Paradox::Gpu::CreateInstance(const GpuInitInfo* pInitInfo)
 
 void Paradox::Gpu::DestroyInstance()
 {
+    VulkanZoneScoped; 
     VK_LOG("Destroying VkInstance...\n");
 
     if (m_Instance != VK_NULL_HANDLE) {
@@ -235,6 +244,7 @@ void Paradox::Gpu::DestroyInstance()
 
 VkResult Paradox::Gpu::AcquirePhyicalDevice()
 {
+    VulkanZoneScoped; 
     VK_LOG("Selecting a Physical Device...\n");
 
     //Enumerate existing physical devices
@@ -414,6 +424,7 @@ VkResult Paradox::Gpu::AcquirePhyicalDevice()
 
 VkResult Paradox::Gpu::CreateDevice()
 {
+    VulkanZoneScoped; 
     VK_LOG("Creating Device...\n");
 
     const VkPhysicalDeviceDescriptorIndexingFeatures descriptorIndexingFeatures = {
@@ -445,6 +456,7 @@ VkResult Paradox::Gpu::CreateDevice()
 
 void Paradox::Gpu::DestroyDevice()
 {
+    VulkanZoneScoped; 
     VK_LOG("Destroying Device...\n");
 
     if (m_Device != VK_NULL_HANDLE) {
@@ -455,6 +467,7 @@ void Paradox::Gpu::DestroyDevice()
 
 VkResult Paradox::Gpu::CreateDebugMessenger()
 {
+    VulkanZoneScoped; 
     VK_LOG("Creating Debug Utils Messenger...\n");
     if (m_Instance == VK_NULL_HANDLE) {
         return CheckVkResult(VK_ERROR_DEVICE_LOST, "Invalid Vulkan Instance!\n");
@@ -478,6 +491,7 @@ VkResult Paradox::Gpu::CreateDebugMessenger()
 
 void Paradox::Gpu::DestroyDebugMessenger()
 {
+    VulkanZoneScoped; 
     if (m_Instance == VK_NULL_HANDLE) {
         CheckVkResult(VK_ERROR_DEVICE_LOST, "Invalid Vulkan Instance!\n");
         return;
@@ -491,6 +505,7 @@ void Paradox::Gpu::DestroyDebugMessenger()
 
 VkResult Paradox::Gpu::SetDebugObjectName(const uint64_t handle, const VkObjectType type, const std::string& name) const
 {
+    VulkanZoneScoped; 
     VkResult res = VK_SUCCESS;
     if (m_EnableDebugUtils) {
         if (!name.empty()) {
@@ -517,6 +532,7 @@ VkResult Paradox::Gpu::SetDebugObjectName(const uint64_t handle, const VkObjectT
 
 VKAPI_ATTR VkBool32 VKAPI_CALL Paradox::Gpu::DebugMessengerCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, VkDebugUtilsMessageTypeFlagsEXT messageType, const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData, void* pUserData)
 {
+    VulkanZoneScoped; 
     Log::Print(ELogColour::LightMagenta, "%s\n", pCallbackData->pMessage);
     return VK_FALSE;
 }
