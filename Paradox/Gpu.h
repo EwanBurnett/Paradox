@@ -7,11 +7,23 @@
 #include <vk_mem_alloc.h>   //VMA
 
 #include <string> 
+#include <bitset>
 
 #define PackVersion(major,minor,patch) VK_MAKE_API_VERSION(0, major, minor, patch)
 
 
 namespace Paradox {
+
+    enum class EGpuFeatureCapabilities {
+        None = 0, 
+
+        Bindless = (1 << 0), 
+        Hardware_Ray_Tracing_Full = (1 << 1),
+        Hardware_Ray_Tracing_Lite = (1 << 2),
+        Dynamic_Rendering = (1 << 3),
+
+        EGpuFeatureCapabilities_MAX
+    };
 
     /**
      * @brief Optional GPU Initialization Info.
@@ -29,6 +41,7 @@ namespace Paradox {
         ParadoxError Init(const GpuInitInfo* pInitInfo = nullptr);
         ParadoxError Shutdown();
 
+        std::bitset<(size_t)EGpuFeatureCapabilities::EGpuFeatureCapabilities_MAX> GetCapabilities() const;
     private:
         static VkResult CheckVkResult(const VkResult res, const std::string& msg = "");
 
@@ -62,6 +75,7 @@ namespace Paradox {
         VkAllocationCallbacks* m_pAllocationCallbacks;
 
         VkDebugUtilsMessengerEXT m_DebugMessenger;
+        std::bitset<(size_t)EGpuFeatureCapabilities::EGpuFeatureCapabilities_MAX> m_Capabilities; 
 
     private:
         static PFN_vkCreateDebugUtilsMessengerEXT vkCreateDebugUtilsMessengerEXT;

@@ -4,6 +4,7 @@
 
 #include <unordered_map>
 #include <vector>
+#include <cstring>|
 
 #ifdef _MSC_VER
 #define VK_LOG(message, ...) Paradox::Log::Print(Paradox::ELogColour::Magenta, "[Vulkan]\t" message, ##__VA_ARGS__)
@@ -22,6 +23,46 @@ PFN_vkSetDebugUtilsObjectNameEXT Paradox::Gpu::vkSetDebugUtilsObjectNameEXT = nu
     else CheckVkResult(VK_ERROR_EXTENSION_NOT_PRESENT, "Unable to load Function " #x " !\n"); \
 }\
 
+
+//TODO: Promote this to a static const?
+static const char* kGpuFeatureCapabilitiesNames[(size_t)Paradox::EGpuFeatureCapabilities::EGpuFeatureCapabilities_MAX] = {
+    "None",
+    "Bindless",
+    "Hardware Ray Tracing (Full)",
+    "Hardware Ray Tracing (Lite)",
+    "Dynamic Rendering",
+    "Invalid!",
+};
+
+
+struct FeatureRequirements {
+    VkPhysicalDeviceFeatures features = {};
+    VkPhysicalDeviceDescriptorIndexingFeatures descriptorIndexingFeatures = { };
+    std::vector<const char*> deviceExtensions;
+};
+
+static const std::unordered_map<Paradox::EGpuFeatureCapabilities, FeatureRequirements> kFeatureRequirements = {
+    {
+        Paradox::EGpuFeatureCapabilities::Bindless, {
+            .features = {
+        //.textureCompressionASTC_LDR = VK_TRUE,
+            },
+    .descriptorIndexingFeatures = {
+        .shaderSampledImageArrayNonUniformIndexing = VK_TRUE,  //Enable Non-uniform Array indexing (#extension GL_EXT_nonuniform_qualifier : require)
+        .shaderStorageBufferArrayNonUniformIndexing = VK_TRUE,   //Enable Non-uniform Array indexing (#extension GL_EXT_nonuniform_qualifier : require)
+        .shaderStorageImageArrayNonUniformIndexing = VK_TRUE,  //Enable Non-uniform Array indexing (#extension GL_EXT_nonuniform_qualifier : require)
+        .descriptorBindingSampledImageUpdateAfterBind = VK_TRUE,
+        .descriptorBindingStorageImageUpdateAfterBind = VK_TRUE,
+        .descriptorBindingStorageBufferUpdateAfterBind = VK_TRUE,
+        .descriptorBindingPartiallyBound = VK_TRUE, //Enable unbound descriptor slots
+        .runtimeDescriptorArray = VK_TRUE, //Enable non-sized arrays
+    },
+    .deviceExtensions = {VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME }, //, VK_EXT_ASTC_DECODE_MODE_EXTENSION_NAME},
+}
+},
+};
+
+
 Paradox::Gpu::Gpu()
 {
     m_Instance = VK_NULL_HANDLE;
@@ -32,6 +73,7 @@ Paradox::Gpu::Gpu()
     m_pAllocationCallbacks = nullptr;
 
     m_DebugMessenger = VK_NULL_HANDLE;
+    m_Capabilities = {};
 }
 
 Paradox::ParadoxError Paradox::Gpu::Init(const GpuInitInfo* pInitInfo)
@@ -60,6 +102,11 @@ Paradox::ParadoxError Paradox::Gpu::Shutdown()
     DestroyInstance();
 
     return ParadoxError::NotImplemented;
+}
+
+std::bitset<(size_t)Paradox::EGpuFeatureCapabilities::EGpuFeatureCapabilities_MAX> Paradox::Gpu::GetCapabilities() const
+{
+    return m_Capabilities;
 }
 
 VkResult Paradox::Gpu::CheckVkResult(const VkResult res, const std::string& msg)
@@ -161,9 +208,6 @@ VkResult Paradox::Gpu::AcquirePhyicalDevice()
 {
     VK_LOG("Selecting a Physical Device...\n");
 
-    //Evaluate Physical Device feature support. 
-    VkPhysicalDeviceFeatures requiredFeatures = {};
-
     //Enumerate existing physical devices
     std::vector<VkPhysicalDevice> physicalDevices;
     {
@@ -173,84 +217,167 @@ VkResult Paradox::Gpu::AcquirePhyicalDevice()
         vkEnumeratePhysicalDevices(m_Instance, &physicalDeviceCount, physicalDevices.data());
     }
 
-    //Prefer Discrete GPUs -> Integrated GPUs -> CPUs -> Software Driver
-    //Require Vulkan 1.2 support. 
-    VkPhysicalDevice deviceCandidate = VK_NULL_HANDLE;
-    VkPhysicalDeviceType candidateType = VK_PHYSICAL_DEVICE_TYPE_MAX_ENUM;
-    {
-        for (const VkPhysicalDevice device : physicalDevices) {
-            //Query the Physical Device Properties for the relevant information. 
-            VkPhysicalDeviceProperties deviceProperties = {};
-            vkGetPhysicalDeviceProperties(device, &deviceProperties);
+    if (!physicalDevices.empty()) {
+        //Score each available Device Candidate. 
+        //Discrete GPU +1000
+        //Integrated GPU +500 
+        //CPU +100
+        //+1000 for each supported feature set (extensions + device features)
+        std::unordered_map<VkPhysicalDevice, uint64_t> candidates;
+        for (auto& device : physicalDevices) {
+            candidates.emplace(device, 0);
+        }
+        std::unordered_map<VkPhysicalDevice, std::bitset<(size_t)EGpuFeatureCapabilities::EGpuFeatureCapabilities_MAX>> capabilities;
+        //All feature sets are supported, unless otherwise stated!
+        for (auto& device : physicalDevices) {
+            for (size_t i = 0; i < (size_t)EGpuFeatureCapabilities::EGpuFeatureCapabilities_MAX; ++i) {
+                capabilities[device][i] = 1;
+            }
+        }
+
+        //...
+
+        for (auto& candidate : candidates) {
+            VkPhysicalDeviceProperties deviceProperties;
+            vkGetPhysicalDeviceProperties(candidate.first, &deviceProperties);
 
             //Skip any devices that don't support Vulkan 1.2
             if (deviceProperties.apiVersion < VK_API_VERSION_1_2) {
                 Log::Debug("Device [%s](%s) Skipped: Vulkan API Version (%d.%d.%d) was unsupported!\n", deviceProperties.deviceName, string_VkPhysicalDeviceType(deviceProperties.deviceType), VK_API_VERSION_MAJOR(deviceProperties.apiVersion), VK_API_VERSION_MINOR(deviceProperties.apiVersion), VK_API_VERSION_PATCH(deviceProperties.apiVersion));
+                candidate.second = 0;
                 continue;
             }
+            else {
+                candidate.second += 1000;
+            }
 
+            //Prefer Discrete GPU > Integrated GPU > CPU
+            switch (deviceProperties.deviceType) {
+            case VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU:
+                candidate.second += 1000;
+                break;
+            case VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU:
+                candidate.second += 500;
+                break;
+            case VK_PHYSICAL_DEVICE_TYPE_CPU:
+                candidate.second += 100;
+                break;
+            case VK_PHYSICAL_DEVICE_TYPE_OTHER:
+                candidate.second += 50;
+                break;
+            default:
+                break;
+            }
+
+
+            //Evaluate device feature compatibility
+
+                //Device Features
             {
-                //Evaluate device feature compatibility
                 VkPhysicalDeviceFeatures deviceFeatures = {};
-                vkGetPhysicalDeviceFeatures(device, &deviceFeatures);
+                vkGetPhysicalDeviceFeatures(candidate.first, &deviceFeatures);
 
-                bool featuresValid = true;
 
-                for (size_t i = 0; i < sizeof(VkPhysicalDeviceFeatures) / sizeof(VkBool32); i++) {
-                    VkBool32* a = ((VkBool32*)&requiredFeatures) + i;
-                    VkBool32* b = ((VkBool32*)&deviceFeatures) + i;
+                for (auto& featureSet : kFeatureRequirements) {
+                    if (featureSet.first == EGpuFeatureCapabilities::EGpuFeatureCapabilities_MAX) {
+                        break;
+                    }
 
-                    if (*a == VK_TRUE) {
-                        if (*b != VK_TRUE) {
-                            featuresValid = false;
-                            Log::Debug("Device [%s](%s) Skipped: Not all required features are supported!\n", deviceProperties.deviceName, string_VkPhysicalDeviceType(deviceProperties.deviceType));
+                    VkPhysicalDeviceFeatures requiredFeatures = featureSet.second.features;
+
+                    bool featuresValid = true;
+                    for (size_t i = 0; i < sizeof(VkPhysicalDeviceFeatures) / sizeof(VkBool32); i++) {
+                        VkBool32* a = ((VkBool32*)&requiredFeatures) + i;
+                        VkBool32* b = ((VkBool32*)&deviceFeatures) + i;
+
+                        if (*a == VK_TRUE) {
+                            if (*b != VK_TRUE) {
+                                featuresValid = false;
+                                Log::Debug("Device [%s](%s) Skipped: Not all required features are supported!\n", deviceProperties.deviceName, string_VkPhysicalDeviceType(deviceProperties.deviceType));
+                                break;
+                            }
+                        }
+                    }
+
+
+                    if (!featuresValid) {
+                        Log::Warning("Not all required Physical Device Features were available! [%s]\n", kGpuFeatureCapabilitiesNames[(size_t)featureSet.first]);
+                        capabilities[candidate.first][(size_t)featureSet.first] = 0;
+                        continue;
+                    }
+                    else {
+                        Log::Debug("%s Feature Set Supported!\n", kGpuFeatureCapabilitiesNames[(size_t)featureSet.first]);
+                        capabilities[candidate.first][(size_t)featureSet.first] = 1;
+                        candidate.second += 1000u;
+                    }
+                }
+            }
+
+            //Device Extensions
+            {
+                uint32_t extensionPropertyCount = 0u;
+                vkEnumerateDeviceExtensionProperties(candidate.first, nullptr, &extensionPropertyCount, nullptr);
+                std::vector<VkExtensionProperties> extensionProperties(extensionPropertyCount);
+                vkEnumerateDeviceExtensionProperties(candidate.first, nullptr, &extensionPropertyCount, extensionProperties.data());
+
+
+                for (auto& featureSet : kFeatureRequirements) {
+                    for (const auto& extension : featureSet.second.deviceExtensions) {
+
+                        //Evaluate Instance Extension Support
+                        bool extensionSupported = false;
+
+                        for (const auto& property : extensionProperties) {
+                            if (strcmp(property.extensionName, extension) == 0) {
+                                extensionSupported = true;
+                                break;
+                            }
+                        }
+
+                        //Add the extension to our internal list, if supported. 
+                        if (extensionSupported) {
+                            Log::Debug("Enabling Device Extension <%s>.\n", extension);
+                            //deviceExtensions.push_back(extension);
+                            capabilities[candidate.first][(size_t)featureSet.first] = 1;
+                            candidate.second += 1000u;
+                        }
+                        else {
+                            Log::Debug("Extension <%s> is not supported by the current Vulkan Device!\n", extension);
+                            Log::Warning("Not all required Device Extensions were available! [%s]\n", kGpuFeatureCapabilitiesNames[(size_t)featureSet.first]);
+                            capabilities[candidate.first][(size_t)featureSet.first] = 0;
+
+                            break;
                         }
                     }
                 }
-
-                if (!featuresValid) {
-                    Log::Debug("Not all required Physical Device Features were available!\n");
-                    continue;
-                }
-            }
-
-            //Cache the physical device candidate
-            {
-                //Convenience Lambda
-                auto selectCandidate = [&]() {
-                    Log::Debug("Device [%s](%s) Is the current Best Candidate!\n\tVulkan API Version (%d.%d.%d)\n\tDriver Version (%d.%d.%d)\n", deviceProperties.deviceName, string_VkPhysicalDeviceType(deviceProperties.deviceType), VK_API_VERSION_MAJOR(deviceProperties.apiVersion), VK_API_VERSION_MINOR(deviceProperties.apiVersion), VK_API_VERSION_PATCH(deviceProperties.apiVersion), VK_API_VERSION_MAJOR(deviceProperties.driverVersion), VK_API_VERSION_MINOR(deviceProperties.driverVersion), VK_API_VERSION_PATCH(deviceProperties.driverVersion));
-
-                    deviceCandidate = device;
-                    candidateType = deviceProperties.deviceType;
-                    };
-
-                //Only evaluate if there IS a candidate already present
-                if (deviceCandidate != VK_NULL_HANDLE) {
-                    if (candidateType != VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU && deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
-                        selectCandidate();
-                    }
-                    else {
-                        selectCandidate();
-                    }
-                }
-                else {
-                    selectCandidate(); //This is the first candidate, so just select it anyway!
-                }
-
             }
         }
 
-        //Complain if there were no supported devices. 
-        if (deviceCandidate == VK_NULL_HANDLE) {
-            Log::Warning("No Physical Device Candidates were Valid!\n");
+        //Select the most appropriate candidate. 
+        VkPhysicalDevice selectedCandidate = VK_NULL_HANDLE;
+        uint64_t candidateScore = 0u;
+
+        for (const auto& candidate : candidates) {
+            VkPhysicalDeviceProperties deviceProperties;
+            vkGetPhysicalDeviceProperties(candidate.first, &deviceProperties);
+            Log::Debug("(+%d) %s <0x%08x>\n\t%s\n\tVulkan API Version (%d.%d.%d)\n\tDriver Version (%d.%d.%d)\n", candidate.second, deviceProperties.deviceName, candidate.first, string_VkPhysicalDeviceType(deviceProperties.deviceType), VK_API_VERSION_MAJOR(deviceProperties.apiVersion), VK_API_VERSION_MINOR(deviceProperties.apiVersion), VK_API_VERSION_PATCH(deviceProperties.apiVersion), VK_API_VERSION_MAJOR(deviceProperties.driverVersion), VK_API_VERSION_MINOR(deviceProperties.driverVersion), VK_API_VERSION_PATCH(deviceProperties.driverVersion));
+            for (size_t c = (size_t)EGpuFeatureCapabilities::None; c < 5; ++c) {
+                Log::Debug("[%s] - %s\n", kGpuFeatureCapabilitiesNames[c], capabilities[candidate.first][c] ? "True" : "False"); 
+            }
+            if (candidate.second > candidateScore) {
+                selectedCandidate = candidate.first;
+            }
         }
 
-        //Write-back the passing device candidate
-        m_PhysicalDevice = deviceCandidate;
+        m_PhysicalDevice = selectedCandidate;
+        m_Capabilities = capabilities[m_PhysicalDevice]; 
+
+        Log::Debug("Physical Device Acquired -> <0x%08x>\n", m_PhysicalDevice);
     }
-
-
-    Log::Debug("Physical Device Acquired -> <0x%08x>\n", m_PhysicalDevice);
+    else {  //This shouldn't *really* be possible, but just in case...
+        Unreachable();
+        Log::Warning("No Physical Devices Found!\n");
+    }
 
     return CheckVkResult(m_PhysicalDevice != VK_NULL_HANDLE ? VK_SUCCESS : VK_ERROR_DEVICE_LOST);
 }
@@ -275,7 +402,7 @@ VkResult Paradox::Gpu::CreateDebugMessenger()
     VkResult res = Gpu::vkCreateDebugUtilsMessengerEXT(m_Instance, &debugMessengerCreateInfo, m_pAllocationCallbacks, &m_DebugMessenger);
 
     Log::Debug("vkCreateDebugUtilsMessengerEXT(...) -> <0x%08x>\n", m_DebugMessenger);
-    return CheckVkResult(res); 
+    return CheckVkResult(res);
 }
 
 void Paradox::Gpu::DestroyDebugMessenger()
