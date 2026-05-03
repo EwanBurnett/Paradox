@@ -81,7 +81,7 @@ target_include_directories(imgui PUBLIC ${imgui_SOURCE_DIR})
 
 set(PARADOX_SOURCES 
     "Paradox/Utility.h" "Paradox/Logger.h" "Paradox/Logger.cpp" "Paradox/Gpu.h" "Paradox/Utility.cpp" "Paradox/Gpu.cpp"
- "Paradox/Profiler.h" "Paradox/Profiler.cpp")
+ "Paradox/Profiler.h" "Paradox/Profiler.cpp" "Paradox/Memory.h" "Paradox/Memory.cpp")
 
 include(${CMAKE_SOURCE_DIR}/Platform/Platform.cmake)
 

@@ -34,6 +34,8 @@ int main() {
         {
             ParadoxZoneScoped; 
             Paradox::Log::Print(Paradox::ELogColour::Cyan, "Frame %d               \r", frameIdx++);
+            char* leaky = new char[0xcff]; 
+            delete[] leaky; 
         }
 
         Paradox::Profiler::EndFrame;
