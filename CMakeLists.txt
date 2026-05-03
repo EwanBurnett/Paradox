@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 3.14)
 
 project("Paradox")
+set(PROJECT_DESCRIPTION "Hardware Accelerated Path Tracing")
 
 # Install Dependencies
 find_package(Vulkan REQUIRED)
@@ -78,9 +79,24 @@ target_include_directories(imgui PUBLIC ${imgui_SOURCE_DIR})
 
 # Build the executable. 
 
+set(PARADOX_SOURCES 
+    "Paradox/Utility.h" "Paradox/Logger.h" "Paradox/Logger.cpp" "Paradox/Gpu.h" "Paradox/Utility.cpp" "Paradox/Gpu.cpp"
+)
+
+include(${CMAKE_SOURCE_DIR}/Platform/Platform.cmake)
+
+
+# Platform-specific source files
+if(WIN32)
+    Configure_Win32(${PROJECT_NAME} ${CMAKE_CURRENT_BINARY_DIR} ${CMAKE_CURRENT_BINARY_DIR} ${PROJECT_DESCRIPTION} 1 1 "${CMAKE_SOURCE_DIR}/Resources/Icons/Paradox_Icon_256_256.ico")
+    set(PARADOX_SOURCES ${PARADOX_SOURCES} "${CMAKE_CURRENT_BINARY_DIR}/Resources.rc")
+endif()
+
+
 add_executable(${PROJECT_NAME} 
     main.cpp
- "Paradox/Utility.h" "Paradox/Logger.h" "Paradox/Logger.cpp" "Paradox/Gpu.h" "Paradox/Utility.cpp" "Paradox/Gpu.cpp")
+    ${PARADOX_SOURCES} 
+)
 
 # Link Library Dependencies
 target_link_libraries(${PROJECT_NAME}
