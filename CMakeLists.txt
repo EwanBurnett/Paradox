@@ -59,7 +59,16 @@ FetchContent_Declare(
     GIT_SHALLOW TRUE
 )
 
-FetchContent_MakeAvailable(tracy glm glfw vma imgui)
+
+# STB
+FetchContent_Declare(
+    stb
+    GIT_REPOSITORY https://github.com/nothings/stb
+    GIT_SHALLOW TRUE
+)
+
+
+FetchContent_MakeAvailable(tracy glm glfw vma imgui stb)
 
 
 # Manually build ImGui as a static library. 
@@ -81,7 +90,7 @@ target_include_directories(imgui PUBLIC ${imgui_SOURCE_DIR})
 
 set(PARADOX_SOURCES 
     "Paradox/Utility.h" "Paradox/Logger.h" "Paradox/Logger.cpp" "Paradox/Gpu.h" "Paradox/Utility.cpp" "Paradox/Gpu.cpp"
- "Paradox/Profiler.h" "Paradox/Profiler.cpp" "Paradox/Memory.h" "Paradox/Memory.cpp")
+ "Paradox/Profiler.h" "Paradox/Profiler.cpp" "Paradox/Memory.h" "Paradox/Memory.cpp" "Paradox/Window.h" "Paradox/Window.cpp")
 
 include(${CMAKE_SOURCE_DIR}/Platform/Platform.cmake)
 
@@ -107,6 +116,10 @@ target_link_libraries(${PROJECT_NAME}
     glfw
     imgui
     TracyClient
+)
+
+target_include_directories(${PROJECT_NAME} PRIVATE
+    ${stb_SOURCE_DIR}
 )
 
 
