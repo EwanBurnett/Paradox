@@ -6,6 +6,8 @@
 #include "Paradox/Profiler.h"
 #include "Paradox/Window.h"
 
+#include "Paradox/Queue.h"
+
 
 int main() {
     glfwInit();
@@ -28,25 +30,31 @@ int main() {
         .applicationVersion = PackVersion(1, 0, 0),
         .createDebug = true,
         .overridePhysicalDevice = false ,
-        .physicalDeviceOverrideIdx = -1,    //Set this if you want to target a specific Device. 
+        .physicalDeviceOverrideIdx = (uint8_t)-1,    //Set this if you want to target a specific Device. 
     };
 
     Paradox::ParadoxError err;
 
     Paradox::Gpu gpu;
     err = gpu.Init(&initInfo);
-
     Paradox::CheckError(err);
-    //Paradox::Log::Print(Paradox::ELogColour::Blue, Paradox::GetErrorString(err).c_str()); 
+
+    //Create a queue. 
+    Paradox::Queue queue; 
+    queue.Create(&gpu, Paradox::EQueueType::Graphics, "Default Queue"); 
 
     uint64_t frameIdx = 0;
     while (window.PollEvents()) {
         ParadoxZoneScoped;
         Paradox::Log::Print(Paradox::ELogColour::Cyan, "Frame %d               \r", frameIdx++);
 
+        //Submit some work. 
+        queue.Submit(&gpu, nullptr);
+
         Paradox::Profiler::EndFrame();
     }
 
+    queue.Destroy(&gpu); 
 
     gpu.Shutdown();
     window.Destroy();
