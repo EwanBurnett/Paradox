@@ -443,10 +443,6 @@ VkResult Paradox::Gpu::CreateDevice()
     VulkanZoneScoped;
     VK_LOG("Creating Device...\n");
 
-
-
-
-
     VkPhysicalDeviceFeatures features = {};
     std::vector<const char*> deviceExtensions;
 
