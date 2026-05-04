@@ -31,7 +31,7 @@ PFN_vkSetDebugUtilsObjectNameEXT Paradox::Gpu::vkSetDebugUtilsObjectNameEXT = nu
 
 //TODO: Promote this to a static const?
 static std::unordered_map<Paradox::EGpuFeatureCapabilities, const char* > kGpuFeatureCapabilitiesNames = {
-    {Paradox::EGpuFeatureCapabilities::None, "None"},
+    {Paradox::EGpuFeatureCapabilities::Required, "Required"},
     {Paradox::EGpuFeatureCapabilities::Bindless, "Bindless"},
     {Paradox::EGpuFeatureCapabilities::Dynamic_Rendering, "Dynamic Rendering"},
     {Paradox::EGpuFeatureCapabilities::Ray_Tracing_Pipeline, "Ray Tracing Pipeline"},
@@ -48,7 +48,7 @@ struct FeatureRequirements {
 
 static const std::unordered_map<Paradox::EGpuFeatureCapabilities, FeatureRequirements> kFeatureRequirements = {
     {
-        Paradox::EGpuFeatureCapabilities::None, {
+        Paradox::EGpuFeatureCapabilities::Required, {
             .features = {},
             .deviceExtensions = {VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME, VK_KHR_SHADER_NON_SEMANTIC_INFO_EXTENSION_NAME },
         }
@@ -416,7 +416,7 @@ VkResult Paradox::Gpu::AcquirePhyicalDevice()
             VkPhysicalDeviceProperties deviceProperties;
             vkGetPhysicalDeviceProperties(candidate.first, &deviceProperties);
             Log::Debug("(+%d) %s <0x%08x>\n\t%s\n\tVulkan API Version (%d.%d.%d)\n\tDriver Version (%d.%d.%d)\n", candidate.second, deviceProperties.deviceName, candidate.first, string_VkPhysicalDeviceType(deviceProperties.deviceType), VK_API_VERSION_MAJOR(deviceProperties.apiVersion), VK_API_VERSION_MINOR(deviceProperties.apiVersion), VK_API_VERSION_PATCH(deviceProperties.apiVersion), VK_API_VERSION_MAJOR(deviceProperties.driverVersion), VK_API_VERSION_MINOR(deviceProperties.driverVersion), VK_API_VERSION_PATCH(deviceProperties.driverVersion));
-            for (size_t c = (size_t)EGpuFeatureCapabilities::None; c < (size_t)EGpuFeatureCapabilities::EGpuFeatureCapabilities_COUNT - 1; ++c) {
+            for (size_t c = (size_t)EGpuFeatureCapabilities::Required; c < (size_t)EGpuFeatureCapabilities::EGpuFeatureCapabilities_COUNT - 1; ++c) {
                 //Log::Debug("[%s] - %s\n", kGpuFeatureCapabilitiesNames[c], capabilities[candidate.first][c] ? "True" : "False");
                 //TODO: 
             }
@@ -454,7 +454,6 @@ VkResult Paradox::Gpu::CreateDevice()
                 Log::Debug("Loading Extensions for Feature [%s]\n", kGpuFeatureCapabilitiesNames[featureSet.first]);
 
                 for (auto& ext : featureSet.second.deviceExtensions) {
-                    Log::Debug("\t--[%s]\n", ext);
                     featureExtensions.emplace(ext);
                 }
             }
@@ -472,6 +471,10 @@ VkResult Paradox::Gpu::CreateDevice()
         for (auto& ext : featureExtensions) {
             deviceExtensions.push_back(ext.c_str());
         }
+    }
+
+    for (auto& ext : deviceExtensions) {
+        Log::Debug("\t--[%s]\n", ext);
     }
 
     //Configure device features. 
@@ -522,48 +525,55 @@ VkResult Paradox::Gpu::CreateDevice()
         .features = features,
     };
 
-    //TODO: Expose n device queues!!!
-    auto FindGraphicsQueueFamilyIndex = [](VkPhysicalDevice physicalDevice) -> uint32_t {
+    //Expose all available device queues. 
+    std::vector<std::vector<float>> priorities;
 
+    std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
+    {
         uint32_t propCount = 0;
-        vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &propCount, nullptr);
+        vkGetPhysicalDeviceQueueFamilyProperties(m_PhysicalDevice, &propCount, nullptr);
         std::vector<VkQueueFamilyProperties> properties(propCount);
-        vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &propCount, properties.data());
+        vkGetPhysicalDeviceQueueFamilyProperties(m_PhysicalDevice, &propCount, properties.data());
+
 
         uint32_t index = 0;
         for (const auto& p : properties) {
 
-            if (p.queueFlags & VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT) {
-                return index;
+            VkDeviceQueueCreateInfo queueCreateInfo = {};
+            queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+            queueCreateInfo.pNext = nullptr;
+            queueCreateInfo.flags = 0;
+            queueCreateInfo.queueCount = p.queueCount;
+            queueCreateInfo.queueFamilyIndex = index;
+            std::vector<float> queuePriorities(p.queueCount);
+            for (int i = 0; i < p.queueCount; i++) {
+                queuePriorities[i] = 1.0f;
             }
+            priorities.push_back(queuePriorities);
+            queueCreateInfo.pQueuePriorities = priorities.back().data();
+
+
+            queueCreateInfos.push_back(queueCreateInfo);
+            
+            Log::Debug("Exposing Queue Family [%d] (%d)\n\tGraphics - %s\n\tCompute - %s\n\tTransfer - %s\n", 
+                queueCreateInfo.queueFamilyIndex, 
+                queueCreateInfo.queueCount, 
+                p.queueFlags & VK_QUEUE_GRAPHICS_BIT ? "True" : "False", 
+                p.queueFlags & VK_QUEUE_COMPUTE_BIT ? "True" : "False", 
+                p.queueFlags & VK_QUEUE_TRANSFER_BIT ? "True" : "False"               
+                );
+
             index++;
         }
-
-        return 0;
-        };
-
-    uint32_t qfi = FindGraphicsQueueFamilyIndex(m_PhysicalDevice);
-
-    //TODO: 
-    //Expose 1 Graphics Queue for now.
-    float priority = 1.0f;
-    VkDeviceQueueCreateInfo queueCreateInfo = {
-        .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
-        .pNext = nullptr,
-        .flags = 0,
-        .queueFamilyIndex = qfi,
-        .queueCount = 1,
-        .pQueuePriorities = &priority
-    };
-
+    }
 
     //Create the device. 
     const VkDeviceCreateInfo createInfo = {
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
         .pNext = &deviceFeatures,
         .flags = 0,
-        .queueCreateInfoCount = 1,
-        .pQueueCreateInfos = &queueCreateInfo,
+        .queueCreateInfoCount = static_cast<uint32_t>(queueCreateInfos.size()),
+        .pQueueCreateInfos = queueCreateInfos.data(),
         .enabledExtensionCount = static_cast<uint32_t>(deviceExtensions.size()),
         .ppEnabledExtensionNames = deviceExtensions.data(),
     };

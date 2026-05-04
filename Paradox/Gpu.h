@@ -15,7 +15,7 @@
 namespace Paradox {
 
     enum class EGpuFeatureCapabilities {
-        None = 0, 
+        Required = 0, 
 
         Bindless = (1 << 0), 
         Ray_Tracing_Pipeline = (1 << 1),
