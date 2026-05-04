@@ -107,6 +107,8 @@ Paradox::ParadoxError Paradox::Gpu::Init(const GpuInitInfo* pInitInfo)
         .applicationName = "Paradox-Application",
         .applicationVersion = PackVersion(0, 0, 0),
         .createDebug = true,
+        .overridePhysicalDevice = false, 
+        .physicalDeviceOverrideIdx = (uint8_t)-1,
     };
 
     if (!pInitInfo) {
@@ -121,7 +123,7 @@ Paradox::ParadoxError Paradox::Gpu::Init(const GpuInitInfo* pInitInfo)
         CreateDebugMessenger();
     }
 
-    AcquirePhyicalDevice();
+    AcquirePhyicalDevice(pInitInfo->overridePhysicalDevice, pInitInfo->physicalDeviceOverrideIdx);
     CreateDevice();
 
     //Set debug object names 
@@ -258,7 +260,7 @@ void Paradox::Gpu::DestroyInstance()
     }
 }
 
-VkResult Paradox::Gpu::AcquirePhyicalDevice()
+VkResult Paradox::Gpu::AcquirePhyicalDevice(const bool overridePhysicalDevice, const uint8_t overrideIndex)
 {
     VulkanZoneScoped;
     VK_LOG("Selecting a Physical Device...\n");
@@ -270,6 +272,101 @@ VkResult Paradox::Gpu::AcquirePhyicalDevice()
         vkEnumeratePhysicalDevices(m_Instance, &physicalDeviceCount, nullptr);
         physicalDevices.resize(physicalDeviceCount);
         vkEnumeratePhysicalDevices(m_Instance, &physicalDeviceCount, physicalDevices.data());
+    }
+
+    if (overridePhysicalDevice) {
+        if (overrideIndex >= physicalDevices.size() && overrideIndex != (uint8_t)-1) {
+            Log::Warning("Invalid Physical Device override index [%d]!\nProceeding with automatic device selection.\n", overrideIndex);
+        }
+        else {
+            VkPhysicalDeviceProperties deviceProperties;
+            vkGetPhysicalDeviceProperties(physicalDevices[overrideIndex], &deviceProperties);
+            Log::Warning("Overriding Physical Device: %s\n", deviceProperties.deviceName);
+            Log::Debug("%s <0x%08x>\n\t%s\n\tVulkan API Version (%d.%d.%d)\n\tDriver Version (%d.%d.%d)\n", deviceProperties.deviceName, physicalDevices[overrideIndex], string_VkPhysicalDeviceType(deviceProperties.deviceType), VK_API_VERSION_MAJOR(deviceProperties.apiVersion), VK_API_VERSION_MINOR(deviceProperties.apiVersion), VK_API_VERSION_PATCH(deviceProperties.apiVersion), VK_API_VERSION_MAJOR(deviceProperties.driverVersion), VK_API_VERSION_MINOR(deviceProperties.driverVersion), VK_API_VERSION_PATCH(deviceProperties.driverVersion));
+
+            m_PhysicalDevice = physicalDevices[overrideIndex];
+
+            //Evaluate device feature compatibility
+            //Device Features
+            {
+                VkPhysicalDeviceFeatures deviceFeatures = {};
+                vkGetPhysicalDeviceFeatures(m_PhysicalDevice, &deviceFeatures);
+
+
+                for (auto& featureSet : kFeatureRequirements) {
+                    if (featureSet.first == EGpuFeatureCapabilities::EGpuFeatureCapabilities_MAX) {
+                        break;
+                    }
+
+                    VkPhysicalDeviceFeatures requiredFeatures = featureSet.second.features;
+
+                    bool featuresValid = true;
+                    for (size_t i = 0; i < sizeof(VkPhysicalDeviceFeatures) / sizeof(VkBool32); i++) {
+                        VkBool32* a = ((VkBool32*)&requiredFeatures) + i;
+                        VkBool32* b = ((VkBool32*)&deviceFeatures) + i;
+
+                        if (*a == VK_TRUE) {
+                            if (*b != VK_TRUE) {
+                                featuresValid = false;
+                                Log::Debug("Device [%s](%s) Skipped: Not all required features are supported!\n", deviceProperties.deviceName, string_VkPhysicalDeviceType(deviceProperties.deviceType));
+                                break;
+                            }
+                        }
+                    }
+
+
+                    if (!featuresValid) {
+                        Log::Warning("Not all required Physical Device Features were available! [%s]\n", kGpuFeatureCapabilitiesNames[featureSet.first]);
+                        m_Capabilities[(size_t)featureSet.first] = 0;
+                        continue;
+                    }
+                    else {
+                        Log::Debug("%s Feature Set Supported!\n", kGpuFeatureCapabilitiesNames[featureSet.first]);
+                        m_Capabilities[(size_t)featureSet.first] = 1;
+                    }
+                }
+            }
+
+            //Device Extensions
+            {
+                uint32_t extensionPropertyCount = 0u;
+                vkEnumerateDeviceExtensionProperties(m_PhysicalDevice, nullptr, &extensionPropertyCount, nullptr);
+                std::vector<VkExtensionProperties> extensionProperties(extensionPropertyCount);
+                vkEnumerateDeviceExtensionProperties(m_PhysicalDevice, nullptr, &extensionPropertyCount, extensionProperties.data());
+
+
+                for (auto& featureSet : kFeatureRequirements) {
+                    for (const auto& extension : featureSet.second.deviceExtensions) {
+
+                        //Evaluate Instance Extension Support
+                        bool extensionSupported = false;
+
+                        for (const auto& property : extensionProperties) {
+                            if (strcmp(property.extensionName, extension) == 0) {
+                                extensionSupported = true;
+                                break;
+                            }
+                        }
+
+                        //Add the extension to our internal list, if supported. 
+                        if (extensionSupported) {
+                            Log::Debug("Device Extension <%s> Supported!\n", extension);
+                            //deviceExtensions.push_back(extension);
+                            m_Capabilities[(size_t)featureSet.first] = 1;
+                        }
+                        else {
+                            Log::Debug("Extension <%s> is not supported by the current Vulkan Device!\n", extension);
+                            Log::Warning("Not all required Device Extensions were available! [%s]\n", kGpuFeatureCapabilitiesNames[featureSet.first]);
+                            m_Capabilities[(size_t)featureSet.first] = 0;
+
+                            break;
+                        }
+                    }
+                }
+            }
+
+            return CheckVkResult(m_PhysicalDevice != VK_NULL_HANDLE ? VK_SUCCESS : VK_ERROR_DEVICE_LOST);
+        }
     }
 
     if (!physicalDevices.empty()) {
@@ -326,8 +423,7 @@ VkResult Paradox::Gpu::AcquirePhyicalDevice()
 
 
             //Evaluate device feature compatibility
-
-                //Device Features
+            //Device Features
             {
                 VkPhysicalDeviceFeatures deviceFeatures = {};
                 vkGetPhysicalDeviceFeatures(candidate.first, &deviceFeatures);
@@ -428,6 +524,7 @@ VkResult Paradox::Gpu::AcquirePhyicalDevice()
         m_PhysicalDevice = selectedCandidate;
         m_Capabilities = capabilities[m_PhysicalDevice];
         Log::Debug("Physical Device Acquired -> <0x%08x>\n", m_PhysicalDevice);
+
 
     }
     else {  //This shouldn't *really* be possible, but just in case...
@@ -554,14 +651,14 @@ VkResult Paradox::Gpu::CreateDevice()
 
 
             queueCreateInfos.push_back(queueCreateInfo);
-            
-            Log::Debug("Exposing Queue Family [%d] (%d)\n\tGraphics - %s\n\tCompute - %s\n\tTransfer - %s\n", 
-                queueCreateInfo.queueFamilyIndex, 
-                queueCreateInfo.queueCount, 
-                p.queueFlags & VK_QUEUE_GRAPHICS_BIT ? "True" : "False", 
-                p.queueFlags & VK_QUEUE_COMPUTE_BIT ? "True" : "False", 
-                p.queueFlags & VK_QUEUE_TRANSFER_BIT ? "True" : "False"               
-                );
+
+            Log::Debug("Exposing Queue Family [%d] (%d)\n\tGraphics - %s\n\tCompute - %s\n\tTransfer - %s\n",
+                queueCreateInfo.queueFamilyIndex,
+                queueCreateInfo.queueCount,
+                p.queueFlags & VK_QUEUE_GRAPHICS_BIT ? "True" : "False",
+                p.queueFlags & VK_QUEUE_COMPUTE_BIT ? "True" : "False",
+                p.queueFlags & VK_QUEUE_TRANSFER_BIT ? "True" : "False"
+            );
 
             index++;
         }

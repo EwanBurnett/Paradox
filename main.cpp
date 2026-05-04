@@ -27,6 +27,8 @@ int main() {
         .applicationName = "Paradox",
         .applicationVersion = PackVersion(1, 0, 0),
         .createDebug = true,
+        .overridePhysicalDevice = false ,
+        .physicalDeviceOverrideIdx = -1,    //Set this if you want to target a specific Device. 
     };
 
     Paradox::ParadoxError err;

@@ -32,7 +32,9 @@ namespace Paradox {
     struct GpuInitInfo {
         std::string applicationName;
         uint32_t applicationVersion;
-        bool createDebug;
+        bool createDebug = true;
+        bool overridePhysicalDevice = false;
+        uint8_t physicalDeviceOverrideIdx = -1; 
     };
 
     class Gpu {
@@ -51,7 +53,7 @@ namespace Paradox {
         VkResult CreateInstance(const GpuInitInfo* pInitInfo);
         void DestroyInstance();
 
-        VkResult AcquirePhyicalDevice();
+        VkResult AcquirePhyicalDevice(const bool overridePhysicalDevice, const uint8_t overrideIndex);
 
         VkResult CreateDevice();
         void DestroyDevice();
