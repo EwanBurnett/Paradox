@@ -107,7 +107,7 @@ Paradox::ParadoxError Paradox::Gpu::Init(const GpuInitInfo* pInitInfo)
         .applicationName = "Paradox-Application",
         .applicationVersion = PackVersion(0, 0, 0),
         .createDebug = true,
-        .overridePhysicalDevice = false, 
+        .overridePhysicalDevice = false,
         .physicalDeviceOverrideIdx = (uint8_t)-1,
     };
 
@@ -155,6 +155,11 @@ std::bitset<(size_t)Paradox::EGpuFeatureCapabilities::EGpuFeatureCapabilities_MA
 {
     ParadoxZoneScoped;
     return m_Capabilities;
+}
+
+bool Paradox::Gpu::GetCapabilitySupport(EGpuFeatureCapabilities capability) const
+{
+    return m_Capabilities.test((size_t)capability);
 }
 
 VkResult Paradox::Gpu::CheckVkResult(const VkResult res, const std::string& msg)
@@ -763,3 +768,104 @@ VKAPI_ATTR VkBool32 VKAPI_CALL Paradox::Gpu::DebugMessengerCallback(VkDebugUtils
     Log::Print(ELogColour::LightMagenta, "%s\n", pCallbackData->pMessage);
     return VK_FALSE;
 }
+
+//--------------
+
+
+Paradox::ParadoxError Paradox::Gpu::CreateQueue(VkQueue* pOutQueue, uint32_t* pOutQueueFamilyIndex, EQueueType type, const std::string& name) const
+{
+    static std::unordered_map<uint32_t, uint32_t> queueFamilyAllocatedCounts; 
+
+    auto GetQueueTypeProperties = [&](EQueueType type) -> std::pair<uint32_t, uint32_t> {
+        //Get this device's queue family properties. 
+        uint32_t propCount = 0;
+        vkGetPhysicalDeviceQueueFamilyProperties(m_PhysicalDevice, &propCount, nullptr);
+        std::vector<VkQueueFamilyProperties> properties(propCount);
+        vkGetPhysicalDeviceQueueFamilyProperties(m_PhysicalDevice, &propCount, properties.data());
+
+        //Enumerate queue flag bits
+        VkQueueFlags flagBits = {};
+        {
+            switch (type) {
+            case EQueueType::Graphics:
+                flagBits |= VK_QUEUE_GRAPHICS_BIT;
+                break;
+            case EQueueType::Transfer:
+                flagBits |= VK_QUEUE_TRANSFER_BIT;
+                break;
+            case EQueueType::Compute:
+                flagBits |= VK_QUEUE_COMPUTE_BIT;
+                break;
+            default:
+                break;
+            }
+        }
+
+        //Search all available queue families for queues meeting our requirements. 
+        std::vector<std::pair<uint32_t, VkQueueFlags>> queueFamilyCandidates;
+
+        for (size_t i = 0; i < properties.size(); ++i) {
+            if (properties[i].queueFlags & flagBits) {
+                Log::Debug("Found Queue Family Candidate: (%d)[%d / %d]\n", i, queueFamilyAllocatedCounts[i], properties[i].queueCount); 
+                queueFamilyCandidates.push_back({ i, properties[i].queueFlags });
+            }
+        }
+        //Early return if there are no viable candidates. 
+        if (queueFamilyCandidates.empty()) {
+            Log::Debug("No viable Queue Family Candidates were found!\n");
+            return { -1, -1 };
+        }
+
+        //Sort the candidates based on flags, to prioritize dedicated queue families. 
+        std::sort(queueFamilyCandidates.begin(), queueFamilyCandidates.end(), [](std::pair<uint32_t, VkQueueFlags>& a, std::pair<uint32_t, VkQueueFlags>& b) {
+            return a.second < b.second;
+            });
+
+        //Return available queues. 
+        for (auto& candidate : queueFamilyCandidates) {
+            if (queueFamilyAllocatedCounts[candidate.first] < properties[candidate.first].queueCount) {
+                Log::Debug("Allocating Queue (%d)[%d]\n", candidate.first, queueFamilyAllocatedCounts[candidate.first]); 
+                return { candidate.first, queueFamilyAllocatedCounts[candidate.first]++ }; 
+                break; 
+            }
+        }
+
+
+        return { -1, -1 };
+        };
+
+    //Retrieve queue data. 
+    auto queueProps = GetQueueTypeProperties(type);
+
+    uint32_t queueFamilyIndex = queueProps.first;
+    uint32_t queueIndex = queueProps.second;
+
+    if (queueFamilyIndex == -1 || queueIndex == -1) {
+        VK_LOG("Failed to Acquire Device Queue!\n");
+        return ParadoxError::Failed;
+    }
+
+    vkGetDeviceQueue(m_Device, queueFamilyIndex, queueIndex, pOutQueue);
+    *pOutQueueFamilyIndex = queueFamilyIndex; 
+
+    if (*pOutQueue == VK_NULL_HANDLE) {
+        VK_LOG("Failed to Acquire Device Queue!\n");
+        return ParadoxError::Failed;
+    }
+    VK_LOG("Acquired Device Queue (%d)[%d]\n", queueFamilyIndex, queueIndex); 
+
+    return ParadoxError::Success;
+}
+
+void Paradox::Gpu::DestroyQueue(VkQueue* pQueue) const
+{
+    assert(pQueue != VK_NULL_HANDLE);
+    if (pQueue != VK_NULL_HANDLE) {
+        //NOTE: Since Queues are Acquired and not created in vulkan, we can just reset the handle. 
+        *pQueue = VK_NULL_HANDLE;
+    }
+    else {
+        VK_LOG("Attempting to destroy an invalid VkQueue!\n");
+    }
+}
+

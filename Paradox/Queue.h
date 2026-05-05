@@ -2,10 +2,11 @@
 #define __QUEUE_H
 
 #include <cstdint> 
-#include "Gpu.h"
+#include <vulkan/vulkan.h>
 #include "Utility.h"
 
 namespace Paradox {
+    class Gpu; 
     class CommandBuffer;    //TODO: 
     class Fence;    //TODO: 
 

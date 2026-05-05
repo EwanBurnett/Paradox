@@ -9,6 +9,8 @@
 #include <string> 
 #include <bitset>
 
+#include "Queue.h"
+
 #define PackVersion(major,minor,patch) VK_MAKE_API_VERSION(0, major, minor, patch)
 
 
@@ -45,6 +47,13 @@ namespace Paradox {
         ParadoxError Shutdown();
 
         std::bitset<(size_t)EGpuFeatureCapabilities::EGpuFeatureCapabilities_MAX> GetCapabilities() const;
+        bool GetCapabilitySupport(EGpuFeatureCapabilities capability) const; 
+
+    public:
+        ParadoxError CreateQueue(VkQueue* pOutQueue, uint32_t* pOutQueueFamilyIndex, EQueueType type, const std::string& name = "") const;
+        void DestroyQueue(VkQueue* pQueue) const; 
+
+       
     private:
         static VkResult CheckVkResult(const VkResult res, const std::string& msg = "");
 

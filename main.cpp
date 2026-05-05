@@ -40,8 +40,30 @@ int main() {
     Paradox::CheckError(err);
 
     //Create a queue. 
-    Paradox::Queue queue; 
-    queue.Create(&gpu, Paradox::EQueueType::Graphics, "Default Queue"); 
+    std::vector<Paradox::Queue> graphicsQueues;
+    std::vector<Paradox::Queue> computeQueues;
+    std::vector<Paradox::Queue> transferQueues;
+
+    {
+        Paradox::Queue tmp;
+        Paradox::Log::Message("Graphics Queues\n"); 
+        while (tmp.Create(&gpu, Paradox::EQueueType::Graphics, std::format("Graphics Queue {0}", graphicsQueues.size())) != Paradox::ParadoxError::Failed) {
+            graphicsQueues.push_back(tmp); 
+        }
+
+        Paradox::Log::Message("Compute Queues\n"); 
+        while (tmp.Create(&gpu, Paradox::EQueueType::Compute, std::format("Compute Queue {0}", computeQueues.size())) != Paradox::ParadoxError::Failed) {
+            computeQueues.push_back(tmp); 
+        }
+
+        Paradox::Log::Message("Transfer Queues\n"); 
+        while (tmp.Create(&gpu, Paradox::EQueueType::Transfer, std::format("Cansfer Queue {0}", transferQueues.size())) != Paradox::ParadoxError::Failed) {
+            transferQueues.push_back(tmp); 
+        }
+
+
+    }
+
 
     uint64_t frameIdx = 0;
     while (window.PollEvents()) {
@@ -49,12 +71,12 @@ int main() {
         Paradox::Log::Print(Paradox::ELogColour::Cyan, "Frame %d               \r", frameIdx++);
 
         //Submit some work. 
-        queue.Submit(&gpu, nullptr);
+        //queue.Submit(&gpu, nullptr);
 
         Paradox::Profiler::EndFrame();
     }
 
-    queue.Destroy(&gpu); 
+    //queue.Destroy(&gpu);
 
     gpu.Shutdown();
     window.Destroy();
