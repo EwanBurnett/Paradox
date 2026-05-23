@@ -53,6 +53,18 @@ namespace Paradox {
         ParadoxError CreateQueue(VkQueue* pOutQueue, uint32_t* pOutQueueFamilyIndex, EQueueType type, const std::string& name = "") const;
         void DestroyQueue(VkQueue* pQueue) const; 
 
+        ParadoxError CreateBinarySemaphore(VkSemaphore* pOutSemaphore, const std::string& name = "") const;
+        ParadoxError CreateTimelineSemaphore(VkSemaphore* pOutSemaphore, const uint64_t initialValue, const std::string& name = "") const;
+        void DestroySemaphore(VkSemaphore* pSemaphore) const; 
+
+        void SignalSemaphore(VkSemaphore* pSemaphore, const uint64_t value) const; 
+        ParadoxError WaitSemaphore(VkSemaphore* pSemaphore, const uint64_t value, const uint64_t timeout) const; 
+
+        ParadoxError CreateFence(VkFence* pOutFence, const uint64_t initialValue, bool createSignaled = false, const std::string& name = "") const;
+        void DestroyFence(VkFence* pFence) const; 
+
+
+
        
     private:
         static VkResult CheckVkResult(const VkResult res, const std::string& msg = "");

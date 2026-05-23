@@ -50,7 +50,7 @@ static const std::unordered_map<Paradox::EGpuFeatureCapabilities, FeatureRequire
     {
         Paradox::EGpuFeatureCapabilities::Required, {
             .features = {},
-            .deviceExtensions = {VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME, VK_KHR_SHADER_NON_SEMANTIC_INFO_EXTENSION_NAME },
+            .deviceExtensions = {VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME, VK_KHR_SHADER_NON_SEMANTIC_INFO_EXTENSION_NAME, VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME },
         }
     },
     {
@@ -867,5 +867,63 @@ void Paradox::Gpu::DestroyQueue(VkQueue* pQueue) const
     else {
         VK_LOG("Attempting to destroy an invalid VkQueue!\n");
     }
+}
+
+Paradox::ParadoxError Paradox::Gpu::CreateBinarySemaphore(VkSemaphore* pOutSemaphore, const std::string& name) const
+{
+    return Paradox::ParadoxError();
+}
+
+Paradox::ParadoxError Paradox::Gpu::CreateTimelineSemaphore(VkSemaphore* pOutSemaphore, const uint64_t initialValue, const std::string& name) const
+{
+    return Paradox::ParadoxError();
+}
+
+void Paradox::Gpu::DestroySemaphore(VkSemaphore* pSemaphore) const
+{
+}
+
+void Paradox::Gpu::SignalSemaphore(VkSemaphore* pSemaphore, const uint64_t value) const
+{ 
+    const VkSemaphoreSignalInfo signalInfo = {
+        .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SIGNAL_INFO, 
+        .pNext = nullptr,
+        .semaphore = *pSemaphore,
+        .value = value, 
+    };
+
+    VkResult res = vkSignalSemaphore(m_Device, &signalInfo);
+    CheckVkResult(res, std::format("Failed to Signal Semaphore <0x{:#08x}> at (0x{:#08x})!\n", *pSemaphore, pSemaphore));
+}
+
+Paradox::ParadoxError Paradox::Gpu::WaitSemaphore(VkSemaphore* pSemaphore, const uint64_t value, const uint64_t timeout) const
+{
+    const VkSemaphoreWaitInfo waitInfo = {
+        .sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO, 
+        .pNext = nullptr, 
+        .flags = 0, 
+        .semaphoreCount = 1, 
+        .pSemaphores = pSemaphore, 
+        .pValues = &value, 
+    };
+    VkResult res = vkWaitSemaphores(m_Device, &waitInfo, timeout); 
+    if (res == VK_TIMEOUT) {
+        return ParadoxError::Timeout; 
+    }
+    
+    if (CheckVkResult(res, std::format("Failed to Wait for Semaphore <0x{:#08x}> at (0x{:#08x})!\n", *pSemaphore, pSemaphore)) != VK_SUCCESS) {
+        return ParadoxError::Failed; 
+    }
+
+    return ParadoxError::Success; 
+}
+
+Paradox::ParadoxError Paradox::Gpu::CreateFence(VkFence* pOutFence, const uint64_t initialValue, bool createSignaled, const std::string& name) const
+{
+    return Paradox::ParadoxError();
+}
+
+void Paradox::Gpu::DestroyFence(VkFence* pFence) const
+{
 }
 

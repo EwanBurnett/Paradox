@@ -10,9 +10,10 @@ namespace Paradox {
     enum class ParadoxError : int32_t {
         Success = 1,
         Failed = 0,
-        
+
         InitializationFailed = -1,
-        NotImplemented = -2, 
+        NotImplemented = -2,
+        Timeout = -3,
 
         //...
 
