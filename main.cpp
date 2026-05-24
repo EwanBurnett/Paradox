@@ -5,6 +5,7 @@
 #include "Paradox/Logger.h"
 #include "Paradox/Profiler.h"
 #include "Paradox/Window.h"
+#include "Paradox/Fence.h"
 
 #include "Paradox/Queue.h"
 
@@ -60,21 +61,37 @@ int main() {
         while (tmp.Create(&gpu, Paradox::EQueueType::Transfer, std::format("Cansfer Queue {0}", transferQueues.size())) != Paradox::ParadoxError::Failed) {
             transferQueues.push_back(tmp); 
         }
-
-
     }
 
+
+    Paradox::Fence fence; 
+    fence.Create(&gpu, 0,  "Fence");
+    VkFence vkFence;
+    gpu.CreateFence(&vkFence, 0, true, "DbgFence"); 
+
+    VkSemaphore binary;
+    gpu.CreateBinarySemaphore(&binary, "DbgBinarySemaphore"); 
 
     uint64_t frameIdx = 0;
     while (window.PollEvents()) {
         ParadoxZoneScoped;
         Paradox::Log::Print(Paradox::ELogColour::Cyan, "Frame %d               \r", frameIdx++);
 
+        Paradox::Fence f; 
+        f.Create(&gpu, frameIdx); 
+        f.Destroy(&gpu); 
         //Submit some work. 
         //queue.Submit(&gpu, nullptr);
 
         Paradox::Profiler::EndFrame();
+
+        fence.Signal(&gpu, frameIdx); 
+        fence.Wait(&gpu, frameIdx);
     }
+
+    gpu.DestroySemaphore(&binary); 
+    gpu.DestroyFence(&vkFence); 
+    fence.Destroy(&gpu); 
 
     //queue.Destroy(&gpu);
 

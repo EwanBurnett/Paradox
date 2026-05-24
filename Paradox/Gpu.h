@@ -17,9 +17,9 @@
 namespace Paradox {
 
     enum class EGpuFeatureCapabilities {
-        Required = 0, 
+        Required = 0,
 
-        Bindless = (1 << 0), 
+        Bindless = (1 << 0),
         Ray_Tracing_Pipeline = (1 << 1),
         Ray_Query = (1 << 2),
         Dynamic_Rendering = (1 << 3),
@@ -36,7 +36,7 @@ namespace Paradox {
         uint32_t applicationVersion;
         bool createDebug = true;
         bool overridePhysicalDevice = false;
-        uint8_t physicalDeviceOverrideIdx = -1; 
+        uint8_t physicalDeviceOverrideIdx = -1;
     };
 
     class Gpu {
@@ -47,25 +47,26 @@ namespace Paradox {
         ParadoxError Shutdown();
 
         std::bitset<(size_t)EGpuFeatureCapabilities::EGpuFeatureCapabilities_MAX> GetCapabilities() const;
-        bool GetCapabilitySupport(EGpuFeatureCapabilities capability) const; 
+        bool GetCapabilitySupport(EGpuFeatureCapabilities capability) const;
 
     public:
         ParadoxError CreateQueue(VkQueue* pOutQueue, uint32_t* pOutQueueFamilyIndex, EQueueType type, const std::string& name = "") const;
-        void DestroyQueue(VkQueue* pQueue) const; 
+        void DestroyQueue(VkQueue* pQueue) const;
 
         ParadoxError CreateBinarySemaphore(VkSemaphore* pOutSemaphore, const std::string& name = "") const;
         ParadoxError CreateTimelineSemaphore(VkSemaphore* pOutSemaphore, const uint64_t initialValue, const std::string& name = "") const;
-        void DestroySemaphore(VkSemaphore* pSemaphore) const; 
+        void DestroySemaphore(VkSemaphore* pSemaphore) const;
 
-        void SignalSemaphore(VkSemaphore* pSemaphore, const uint64_t value) const; 
-        ParadoxError WaitSemaphore(VkSemaphore* pSemaphore, const uint64_t value, const uint64_t timeout) const; 
+        void SignalSemaphore(VkSemaphore* pSemaphore, const uint64_t value) const;
+        ParadoxError WaitSemaphore(VkSemaphore* pSemaphore, const uint64_t value, const uint64_t timeout = UINT64_MAX) const;
+        ParadoxError WaitSemaphores(VkSemaphore* pSemaphores, const uint32_t numSemaphores, const uint64_t* pValues, bool waitAll = false, const uint64_t timeout = UINT64_MAX) const;
 
         ParadoxError CreateFence(VkFence* pOutFence, const uint64_t initialValue, bool createSignaled = false, const std::string& name = "") const;
-        void DestroyFence(VkFence* pFence) const; 
+        void DestroyFence(VkFence* pFence) const;
 
 
 
-       
+
     private:
         static VkResult CheckVkResult(const VkResult res, const std::string& msg = "");
 
@@ -99,8 +100,8 @@ namespace Paradox {
         VkAllocationCallbacks* m_pAllocationCallbacks;
 
         VkDebugUtilsMessengerEXT m_DebugMessenger;
-        std::bitset<(size_t)EGpuFeatureCapabilities::EGpuFeatureCapabilities_MAX> m_Capabilities; 
-        bool m_EnableDebugUtils; 
+        std::bitset<(size_t)EGpuFeatureCapabilities::EGpuFeatureCapabilities_MAX> m_Capabilities;
+        bool m_EnableDebugUtils;
 
     private:
         static PFN_vkCreateDebugUtilsMessengerEXT vkCreateDebugUtilsMessengerEXT;

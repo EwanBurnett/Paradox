@@ -49,7 +49,7 @@ struct FeatureRequirements {
 static const std::unordered_map<Paradox::EGpuFeatureCapabilities, FeatureRequirements> kFeatureRequirements = {
     {
         Paradox::EGpuFeatureCapabilities::Required, {
-            .features = {},
+            .features = { },
             .deviceExtensions = {VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME, VK_KHR_SHADER_NON_SEMANTIC_INFO_EXTENSION_NAME, VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME },
         }
     },
@@ -618,6 +618,7 @@ VkResult Paradox::Gpu::CreateDevice()
         .descriptorBindingStorageBufferUpdateAfterBind = m_Capabilities[(size_t)EGpuFeatureCapabilities::Bindless] ? VK_TRUE : VK_FALSE,
         .descriptorBindingPartiallyBound = m_Capabilities[(size_t)EGpuFeatureCapabilities::Bindless] ? VK_TRUE : VK_FALSE,
         .runtimeDescriptorArray = m_Capabilities[(size_t)EGpuFeatureCapabilities::Bindless] ? VK_TRUE : VK_FALSE, //Enable non-sized arrays
+        .timelineSemaphore = m_Capabilities[(size_t)EGpuFeatureCapabilities::Required] ? VK_TRUE : VK_FALSE,
         .bufferDeviceAddress = m_Capabilities[(size_t)EGpuFeatureCapabilities::Bindless] ? VK_TRUE : VK_FALSE,
     };
 
@@ -774,7 +775,8 @@ VKAPI_ATTR VkBool32 VKAPI_CALL Paradox::Gpu::DebugMessengerCallback(VkDebugUtils
 
 Paradox::ParadoxError Paradox::Gpu::CreateQueue(VkQueue* pOutQueue, uint32_t* pOutQueueFamilyIndex, EQueueType type, const std::string& name) const
 {
-    static std::unordered_map<uint32_t, uint32_t> queueFamilyAllocatedCounts; 
+    VulkanZoneScoped;
+    static std::unordered_map<uint32_t, uint32_t> queueFamilyAllocatedCounts;
 
     auto GetQueueTypeProperties = [&](EQueueType type) -> std::pair<uint32_t, uint32_t> {
         //Get this device's queue family properties. 
@@ -806,7 +808,7 @@ Paradox::ParadoxError Paradox::Gpu::CreateQueue(VkQueue* pOutQueue, uint32_t* pO
 
         for (size_t i = 0; i < properties.size(); ++i) {
             if (properties[i].queueFlags & flagBits) {
-                Log::Debug("Found Queue Family Candidate: (%d)[%d / %d]\n", i, queueFamilyAllocatedCounts[i], properties[i].queueCount); 
+                Log::Debug("Found Queue Family Candidate: (%d)[%d / %d]\n", i, queueFamilyAllocatedCounts[i], properties[i].queueCount);
                 queueFamilyCandidates.push_back({ i, properties[i].queueFlags });
             }
         }
@@ -824,9 +826,9 @@ Paradox::ParadoxError Paradox::Gpu::CreateQueue(VkQueue* pOutQueue, uint32_t* pO
         //Return available queues. 
         for (auto& candidate : queueFamilyCandidates) {
             if (queueFamilyAllocatedCounts[candidate.first] < properties[candidate.first].queueCount) {
-                Log::Debug("Allocating Queue (%d)[%d]\n", candidate.first, queueFamilyAllocatedCounts[candidate.first]); 
-                return { candidate.first, queueFamilyAllocatedCounts[candidate.first]++ }; 
-                break; 
+                Log::Debug("Allocating Queue (%d)[%d]\n", candidate.first, queueFamilyAllocatedCounts[candidate.first]);
+                return { candidate.first, queueFamilyAllocatedCounts[candidate.first]++ };
+                break;
             }
         }
 
@@ -846,19 +848,20 @@ Paradox::ParadoxError Paradox::Gpu::CreateQueue(VkQueue* pOutQueue, uint32_t* pO
     }
 
     vkGetDeviceQueue(m_Device, queueFamilyIndex, queueIndex, pOutQueue);
-    *pOutQueueFamilyIndex = queueFamilyIndex; 
+    *pOutQueueFamilyIndex = queueFamilyIndex;
 
     if (*pOutQueue == VK_NULL_HANDLE) {
         VK_LOG("Failed to Acquire Device Queue!\n");
         return ParadoxError::Failed;
     }
-    VK_LOG("Acquired Device Queue (%d)[%d]\n", queueFamilyIndex, queueIndex); 
+    VK_LOG("Acquired Device Queue (%d)[%d]\n", queueFamilyIndex, queueIndex);
 
     return ParadoxError::Success;
 }
 
 void Paradox::Gpu::DestroyQueue(VkQueue* pQueue) const
 {
+    VulkanZoneScoped;
     assert(pQueue != VK_NULL_HANDLE);
     if (pQueue != VK_NULL_HANDLE) {
         //NOTE: Since Queues are Acquired and not created in vulkan, we can just reset the handle. 
@@ -871,59 +874,163 @@ void Paradox::Gpu::DestroyQueue(VkQueue* pQueue) const
 
 Paradox::ParadoxError Paradox::Gpu::CreateBinarySemaphore(VkSemaphore* pOutSemaphore, const std::string& name) const
 {
-    return Paradox::ParadoxError();
+    VulkanZoneScoped;
+    assert(m_Device != VK_NULL_HANDLE);
+    const VkSemaphoreCreateInfo createInfo = {
+        .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = 0u,
+    };
+
+    VkResult res = CheckVkResult(vkCreateSemaphore(m_Device, &createInfo, m_pAllocationCallbacks, pOutSemaphore), "Failed to Create Binary Semaphore!\n");
+
+    if (!name.empty()) {
+        VK_LOG("Creating Binary Semaphore \"%s\" -> <0x%08x> at [0x%08x].\n", name.c_str(), *pOutSemaphore, pOutSemaphore);
+        SetDebugObjectName(reinterpret_cast<uint64_t>(*pOutSemaphore), VK_OBJECT_TYPE_SEMAPHORE, name);
+    }
+    else {
+        VK_LOG("Creating Binary Semaphore -> <0x%08x> at [0x%08x].\n", *pOutSemaphore, pOutSemaphore);
+    }
+
+    return res == VK_SUCCESS ? ParadoxError::Success : ParadoxError::Failed;
 }
 
 Paradox::ParadoxError Paradox::Gpu::CreateTimelineSemaphore(VkSemaphore* pOutSemaphore, const uint64_t initialValue, const std::string& name) const
 {
-    return Paradox::ParadoxError();
+    VulkanZoneScoped;
+    assert(m_Device != VK_NULL_HANDLE);
+    const VkSemaphoreTypeCreateInfo timelineInfo = {
+        .sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO,
+        .pNext = nullptr,
+        .semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE,
+        .initialValue = initialValue,
+    };
+
+    const VkSemaphoreCreateInfo createInfo = {
+        .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
+        .pNext = &timelineInfo,
+        .flags = 0u,
+    };
+
+    VkResult res = CheckVkResult(vkCreateSemaphore(m_Device, &createInfo, m_pAllocationCallbacks, pOutSemaphore), "Failed to Create Timeline Semaphore!\n");
+
+    if (!name.empty()) {
+        VK_LOG("Creating Timeline Semaphore \"%s\" -> <0x%08x> at [0x%08x].\n", name.c_str(), *pOutSemaphore, pOutSemaphore);
+        SetDebugObjectName(reinterpret_cast<uint64_t>(*pOutSemaphore), VK_OBJECT_TYPE_SEMAPHORE, name);
+    }
+    else {
+        VK_LOG("Creating Timeline Semaphore -> <0x%08x> at [0x%08x].\n", *pOutSemaphore, pOutSemaphore);
+    }
+
+    return res == VK_SUCCESS ? ParadoxError::Success : ParadoxError::Failed;
 }
 
 void Paradox::Gpu::DestroySemaphore(VkSemaphore* pSemaphore) const
 {
+    VulkanZoneScoped;
+    assert(m_Device != VK_NULL_HANDLE);
+    VK_LOG("Destroying Semaphore <0x%08x> at [0x%08x].\n", *pSemaphore, pSemaphore);
+    vkDestroySemaphore(m_Device, *pSemaphore, m_pAllocationCallbacks);
+    pSemaphore = VK_NULL_HANDLE;
 }
 
 void Paradox::Gpu::SignalSemaphore(VkSemaphore* pSemaphore, const uint64_t value) const
-{ 
+{
+    VulkanZoneScoped;
     const VkSemaphoreSignalInfo signalInfo = {
-        .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SIGNAL_INFO, 
+        .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SIGNAL_INFO,
         .pNext = nullptr,
         .semaphore = *pSemaphore,
-        .value = value, 
+        .value = value,
     };
 
     VkResult res = vkSignalSemaphore(m_Device, &signalInfo);
-    CheckVkResult(res, std::format("Failed to Signal Semaphore <0x{:#08x}> at (0x{:#08x})!\n", *pSemaphore, pSemaphore));
+    //CheckVkResult(res, std::format("Failed to Signal Semaphore <0x{:#08x}> at (0x{:#08x})!\n", *pSemaphore, pSemaphore));
+    CheckVkResult(res, "Failed to Signal Semaphore <0x{:#08x}> at (0x{:#08x})!\n");
 }
 
 Paradox::ParadoxError Paradox::Gpu::WaitSemaphore(VkSemaphore* pSemaphore, const uint64_t value, const uint64_t timeout) const
 {
+    VulkanZoneScoped;
     const VkSemaphoreWaitInfo waitInfo = {
-        .sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO, 
-        .pNext = nullptr, 
-        .flags = 0, 
-        .semaphoreCount = 1, 
-        .pSemaphores = pSemaphore, 
-        .pValues = &value, 
+        .sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO,
+        .pNext = nullptr,
+        .flags = 0,
+        .semaphoreCount = 1,
+        .pSemaphores = pSemaphore,
+        .pValues = &value,
     };
-    VkResult res = vkWaitSemaphores(m_Device, &waitInfo, timeout); 
+    VkResult res = vkWaitSemaphores(m_Device, &waitInfo, timeout);
     if (res == VK_TIMEOUT) {
-        return ParadoxError::Timeout; 
-    }
-    
-    if (CheckVkResult(res, std::format("Failed to Wait for Semaphore <0x{:#08x}> at (0x{:#08x})!\n", *pSemaphore, pSemaphore)) != VK_SUCCESS) {
-        return ParadoxError::Failed; 
+        return ParadoxError::Timeout;
     }
 
-    return ParadoxError::Success; 
+    //if (CheckVkResult(res, std::format("Failed to Wait for Semaphore <0x{:#08x}> at (0x{:#08x})!\n", *pSemaphore, pSemaphore)) != VK_SUCCESS) {
+    if (CheckVkResult(res, "Failed to Wait for Semaphore <0x{:#08x}> at (0x{:#08x})!\n") != VK_SUCCESS) {
+        return ParadoxError::Failed;
+    }
+
+    return ParadoxError::Success;
+}
+
+Paradox::ParadoxError Paradox::Gpu::WaitSemaphores(VkSemaphore* pSemaphores, const uint32_t numSemaphores, const uint64_t* pValues, bool waitAll, const uint64_t timeout) const
+{
+    VulkanZoneScoped;
+    const VkSemaphoreWaitInfo waitInfo = {
+        .sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO,
+        .pNext = nullptr,
+        .flags = waitAll ? 0u : VK_SEMAPHORE_WAIT_ANY_BIT,
+        .semaphoreCount = numSemaphores,
+        .pSemaphores = pSemaphores,
+        .pValues = pValues,
+    };
+    VkResult res = vkWaitSemaphores(m_Device, &waitInfo, timeout);
+    if (res == VK_TIMEOUT) {
+        return ParadoxError::Timeout;
+    }
+
+    // if (CheckVkResult(res, std::format("Failed to Wait for Semaphores at (0x{:#08x})!\n", pSemaphores)) != VK_SUCCESS) {
+    if (CheckVkResult(res, "Failed to Wait for Semaphores at (0x{:#08x})!\n") != VK_SUCCESS) {
+        return ParadoxError::Failed;
+    }
+
+    return ParadoxError::Success;
 }
 
 Paradox::ParadoxError Paradox::Gpu::CreateFence(VkFence* pOutFence, const uint64_t initialValue, bool createSignaled, const std::string& name) const
 {
-    return Paradox::ParadoxError();
+    VulkanZoneScoped;
+    assert(m_Device != VK_NULL_HANDLE);
+
+    const VkFenceCreateInfo createInfo = {
+        .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = (createSignaled) ? VK_FENCE_CREATE_SIGNALED_BIT : 0u,
+    };
+
+    //VkResult res = CheckVkResult(vkCreateFence(m_Device, &createInfo, m_pAllocationCallbacks, pOutFence), "Failed to Create Fence at [0x%08x].\n", pOutFence);
+    VkResult res = CheckVkResult(vkCreateFence(m_Device, &createInfo, m_pAllocationCallbacks, pOutFence), "Failed to Create Fence.\n");
+    if (res != VK_SUCCESS) {
+        return ParadoxError::Failed;
+    }
+
+    if (!name.empty()) {
+        VK_LOG("Creating Fence \"%s\" -> <0x%08x> at [0x%08x].\n", name.c_str(), *pOutFence, pOutFence);
+        SetDebugObjectName(reinterpret_cast<uint64_t>(*pOutFence), VK_OBJECT_TYPE_FENCE, name);
+    }
+    else {
+        VK_LOG("Creating Fence -> <0x%08x> at [0x%08x].\n", *pOutFence, pOutFence);
+    }
+
+    return ParadoxError::Success;
 }
 
 void Paradox::Gpu::DestroyFence(VkFence* pFence) const
 {
+    VulkanZoneScoped;
+    assert(m_Device != VK_NULL_HANDLE);
+    VK_LOG("Destroying Fence <0x%08x> at [0x%08x].\n", *pFence, pFence);
+    vkDestroyFence(m_Device, *pFence, m_pAllocationCallbacks);
+    *pFence = VK_NULL_HANDLE;
 }
 
