@@ -74,6 +74,8 @@ namespace Paradox {
         void Submit(const Gpu* pGpu, const uint32_t submitCount, const SubmitInfo const** ppSubmitInfos) const;
         void Submit(const Gpu* pGpu, const std::vector<const SubmitInfo const*> submitInfos) const;
 
+        VkQueue GetQueue() const; 
+
     private:
         VkQueue m_Queue;
         uint32_t m_QueueFamilyIndex;

@@ -50,7 +50,7 @@ static const std::unordered_map<Paradox::EGpuFeatureCapabilities, FeatureRequire
     {
         Paradox::EGpuFeatureCapabilities::Required, {
             .features = { },
-            .deviceExtensions = {VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME, VK_KHR_SHADER_NON_SEMANTIC_INFO_EXTENSION_NAME, VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME },
+            .deviceExtensions = {VK_KHR_SWAPCHAIN_EXTENSION_NAME, VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME, VK_KHR_SHADER_NON_SEMANTIC_INFO_EXTENSION_NAME, VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME },
         }
     },
     {
@@ -772,6 +772,15 @@ VKAPI_ATTR VkBool32 VKAPI_CALL Paradox::Gpu::DebugMessengerCallback(VkDebugUtils
 
 //--------------
 
+VkDevice Paradox::Gpu::GetDevice() const
+{
+    return m_Device;
+}
+
+VkPhysicalDevice Paradox::Gpu::GetPhysicalDevice() const
+{
+    return m_PhysicalDevice;
+}
 
 Paradox::ParadoxError Paradox::Gpu::CreateQueue(VkQueue* pOutQueue, uint32_t* pOutQueueFamilyIndex, EQueueType type, const std::string& name) const
 {
@@ -997,7 +1006,7 @@ Paradox::ParadoxError Paradox::Gpu::WaitSemaphores(VkSemaphore* pSemaphores, con
     return ParadoxError::Success;
 }
 
-Paradox::ParadoxError Paradox::Gpu::CreateFence(VkFence* pOutFence, const uint64_t initialValue, bool createSignaled, const std::string& name) const
+Paradox::ParadoxError Paradox::Gpu::CreateFence(VkFence* pOutFence, bool createSignaled, const std::string& name) const
 {
     VulkanZoneScoped;
     assert(m_Device != VK_NULL_HANDLE);
@@ -1032,5 +1041,176 @@ void Paradox::Gpu::DestroyFence(VkFence* pFence) const
     VK_LOG("Destroying Fence <0x%08x> at [0x%08x].\n", *pFence, pFence);
     vkDestroyFence(m_Device, *pFence, m_pAllocationCallbacks);
     *pFence = VK_NULL_HANDLE;
+}
+
+Paradox::ParadoxError Paradox::Gpu::CreateSurface(VkSurfaceKHR* pOutSurface, const Window* pWindow, const std::string& name) const
+{
+    VulkanZoneScoped;
+    assert(m_Instance != VK_NULL_HANDLE);
+
+    VkResult res = CheckVkResult(glfwCreateWindowSurface(m_Instance, reinterpret_cast<GLFWwindow*>(pWindow->GetGLFWHandle()), m_pAllocationCallbacks, pOutSurface), "Failed to Create Surface (GLFW).\n");
+
+    //TODO: Additional Windowing system support
+
+    if (res != VK_SUCCESS) {
+        return ParadoxError::Failed;
+    }
+
+    if (!name.empty()) {
+        VK_LOG("Creating Surface \"%s\" -> <0x%08x> at [0x%08x].\n", name.c_str(), *pOutSurface, pOutSurface);
+        SetDebugObjectName(reinterpret_cast<uint64_t>(*pOutSurface), VK_OBJECT_TYPE_SURFACE_KHR, name);
+    }
+    else {
+        VK_LOG("Creating Surface -> <0x%08x> at [0x%08x].\n", *pOutSurface, pOutSurface);
+    }
+
+    return ParadoxError::Success;
+}
+
+void Paradox::Gpu::DestroySurface(VkSurfaceKHR* pSurface) const
+{
+    VulkanZoneScoped;
+    assert(m_Instance != VK_NULL_HANDLE);
+    VK_LOG("Destroying Surface <0x%08x> at [0x%08x].\n", *pSurface, pSurface);
+    vkDestroySurfaceKHR(m_Instance, *pSurface, m_pAllocationCallbacks);
+    *pSurface = VK_NULL_HANDLE;
+}
+
+Paradox::ParadoxError Paradox::Gpu::CreateSwapchain(VkSwapchainKHR* pOutSwapchain, const VkSurfaceKHR surface, VkExtent2D extents, uint32_t* pImageCount, const VkFormat format, const VkColorSpaceKHR colourSpace, const VkPresentModeKHR presentMode, const std::string& name) const
+{
+    VulkanZoneScoped;
+    assert(m_PhysicalDevice != VK_NULL_HANDLE); 
+    assert(m_Device != VK_NULL_HANDLE);
+
+    //Retrieve the current Surface Capabilities
+    VkSurfaceCapabilitiesKHR capabilities = {};
+    vkGetPhysicalDeviceSurfaceCapabilitiesKHR(m_PhysicalDevice, surface, &capabilities);
+
+    //Evaluate the Image Extent. 
+    {
+        if (extents.width < capabilities.minImageExtent.width) {
+            extents.width = capabilities.minImageExtent.width;
+        }
+        else if (extents.width > capabilities.maxImageExtent.width) {
+            extents.width = capabilities.maxImageExtent.width;
+        }
+
+        if (extents.height < capabilities.minImageExtent.height) {
+            extents.height = capabilities.minImageExtent.height;
+        }
+        else if (extents.height > capabilities.maxImageExtent.height) {
+            extents.height = capabilities.maxImageExtent.height;
+        }
+        // In the event the swapchain is minimised, return early. 
+        if (extents.width == 0 || extents.height == 0) {
+            return ParadoxError::OutOfDate;
+        }
+    }
+
+    //Get the swapchain image count. 
+    {
+        assert(pImageCount != nullptr); 
+        *pImageCount = capabilities.minImageCount + 1; 
+        if (capabilities.maxImageCount > 0 && *pImageCount > capabilities.maxImageCount)
+        {
+            *pImageCount = capabilities.maxImageCount;
+        }
+    }
+    
+
+    //Create the Swapchain. 
+    const VkSwapchainCreateInfoKHR createInfo = {
+        .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
+        .pNext = nullptr,
+        .flags = 0,
+        .surface = surface,
+        .minImageCount = *pImageCount,
+        .imageFormat = format,
+        .imageColorSpace = colourSpace,
+        .imageExtent = extents,
+        .imageArrayLayers = 1,
+        .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+        .imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
+        .queueFamilyIndexCount = 0,
+        .pQueueFamilyIndices = nullptr,
+        .preTransform = capabilities.currentTransform,
+        .compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
+        .presentMode = presentMode,
+        .clipped = VK_TRUE,
+        .oldSwapchain = *pOutSwapchain, 
+    };
+
+    vkDeviceWaitIdle(m_Device);     //Wait for all pending device work to finish! 
+
+    VkResult res = CheckVkResult(vkCreateSwapchainKHR(m_Device, &createInfo, m_pAllocationCallbacks, pOutSwapchain), "Failed to Create Swapchain.\n");
+    if (res != VK_SUCCESS) {
+        return ParadoxError::Failed;
+    }
+
+    if (!name.empty()) {
+        VK_LOG("Creating Swapchain \"%s\" -> <0x%08x> at [0x%08x].\n", name.c_str(), *pOutSwapchain, pOutSwapchain);
+        SetDebugObjectName(reinterpret_cast<uint64_t>(*pOutSwapchain), VK_OBJECT_TYPE_SWAPCHAIN_KHR, name);
+    }
+    else {
+        VK_LOG("Creating Swapchain -> <0x%08x> at [0x%08x].\n", *pOutSwapchain, pOutSwapchain);
+    }
+
+    return ParadoxError::Success;
+}
+
+void Paradox::Gpu::DestroySwapchain(VkSwapchainKHR* pSwapchain) const
+{
+    VulkanZoneScoped;
+    assert(m_Device != VK_NULL_HANDLE);
+    VK_LOG("Destroying Swapchain <0x%08x> at [0x%08x].\n", *pSwapchain, pSwapchain);
+    vkDestroySwapchainKHR(m_Device, *pSwapchain, m_pAllocationCallbacks);
+    *pSwapchain = VK_NULL_HANDLE;
+}
+
+Paradox::ParadoxError Paradox::Gpu::CreateImageView(VkImageView* pOutImageView, const VkImage sourceImage, VkImageViewType viewType, VkFormat format, VkImageSubresourceRange subresource, const std::string& name) const
+{
+    VulkanZoneScoped;
+    assert(m_PhysicalDevice != VK_NULL_HANDLE); 
+    assert(m_Device != VK_NULL_HANDLE);
+
+    const VkImageViewCreateInfo createInfo = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = 0,
+        .image = sourceImage,
+        .viewType = viewType,
+        .format = format,
+        .components = {
+            .r = VK_COMPONENT_SWIZZLE_IDENTITY,
+            .g = VK_COMPONENT_SWIZZLE_IDENTITY,
+            .b = VK_COMPONENT_SWIZZLE_IDENTITY,
+            .a = VK_COMPONENT_SWIZZLE_IDENTITY,
+        },
+        .subresourceRange = subresource
+    };
+
+    VkResult res = CheckVkResult(vkCreateImageView(m_Device, &createInfo, m_pAllocationCallbacks, pOutImageView), "Failed to Create Image View.\n");
+    if (res != VK_SUCCESS) {
+        return ParadoxError::Failed;
+    }
+
+    if (!name.empty()) {
+        VK_LOG("Creating Image View \"%s\" -> <0x%08x> at [0x%08x].\n", name.c_str(), *pOutImageView, pOutImageView);
+        SetDebugObjectName(reinterpret_cast<uint64_t>(*pOutImageView), VK_OBJECT_TYPE_SWAPCHAIN_KHR, name);
+    }
+    else {
+        VK_LOG("Creating Image View -> <0x%08x> at [0x%08x].\n", *pOutImageView, pOutImageView);
+    }
+
+    return ParadoxError::Success;
+}
+
+void Paradox::Gpu::DestroyImageView(VkImageView* pImageView) const
+{
+    VulkanZoneScoped;
+    assert(m_Device != VK_NULL_HANDLE);
+    VK_LOG("Destroying Image View <0x%08x> at [0x%08x].\n", *pImageView, pImageView);
+    vkDestroyImageView(m_Device, *pImageView, m_pAllocationCallbacks);
+    *pImageView = VK_NULL_HANDLE;
 }
 

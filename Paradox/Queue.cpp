@@ -30,3 +30,8 @@ void Paradox::Queue::Submit(const Gpu* pGpu, const uint32_t submitCount, const S
 void Paradox::Queue::Submit(const Gpu* pGpu, const std::vector<const SubmitInfo const*> submitInfos) const
 {
 }
+
+VkQueue Paradox::Queue::GetQueue() const
+{
+    return m_Queue;
+}

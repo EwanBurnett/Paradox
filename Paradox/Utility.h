@@ -14,6 +14,7 @@ namespace Paradox {
         InitializationFailed = -1,
         NotImplemented = -2,
         Timeout = -3,
+        OutOfDate = -4,
 
         //...
 
