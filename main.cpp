@@ -79,18 +79,32 @@ int main() {
     uint64_t frameIdx = 0;
     while (window.PollEvents()) {
         ParadoxZoneScoped;
-        Paradox::Log::Print(Paradox::ELogColour::Cyan, "Frame %d               \r", frameIdx++);
+        uint32_t frameInFlight = frameIdx % Paradox::kFramesInFlight; 
+        uint32_t imageIdx = 0u;     //TODO: Work submission, etc!
+        //uint32_t imageIdx = swapchain.AcquireNextImageIndex(&gpu, UINT64_MAX, frameInFlight);
+
+        Paradox::Log::Print(Paradox::ELogColour::Cyan, "Frame %d               \r", frameIdx);
 
         //Submit some work. 
         //queue.Submit(&gpu, nullptr);
 
         Paradox::Profiler::EndFrame();
 
-        fence.Signal(&gpu, frameIdx);
-        fence.Wait(&gpu, frameIdx);
+        fence.Signal(&gpu, frameIdx + 1);
+        fence.Wait(&gpu, frameIdx + 1);
+        /*
+        */
 
-        swapchain.Present(0, graphicsQueues[0], 0);
+        auto r = swapchain.Present(imageIdx, graphicsQueues[0], frameInFlight); //NOTE: This'll shout about Semaphores not being signalled, since we're not submitting any work to *do* the signalling! 
+
+        if (r == Paradox::ParadoxError::OutOfDate) {
+            swapchain.Recreate(&window, &gpu, "Swapchain"); 
+        }
+
+        frameIdx++; 
     }
+
+    vkDeviceWaitIdle(gpu.GetDevice()); 
 
     gpu.DestroySemaphore(&binary);
     gpu.DestroyFence(&vkFence);

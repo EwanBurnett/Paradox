@@ -52,6 +52,7 @@ namespace Paradox {
         bool GetCapabilitySupport(EGpuFeatureCapabilities capability) const;
 
     public:
+        static VkResult CheckVkResult(const VkResult res, const std::string& msg = "");
 
         VkDevice GetDevice() const; 
         VkPhysicalDevice GetPhysicalDevice() const; 
@@ -83,7 +84,6 @@ namespace Paradox {
 
 
     private:
-        static VkResult CheckVkResult(const VkResult res, const std::string& msg = "");
 
         VkResult LoadInstanceFunctions(const GpuInitInfo* pInitInfo);
 

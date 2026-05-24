@@ -75,8 +75,20 @@ Paradox::ParadoxError Paradox::Swapchain::Create(const Window* pWindow, const Gp
         SetPresentMode(selectedMode);
     }
 
+
+    Recreate(pWindow, pGpu, name); 
+
+    return ParadoxError::Success;
+}
+
+Paradox::ParadoxError Paradox::Swapchain::Recreate(const Window* pWindow, const Gpu* pGpu, const std::string& name)
+{
+    ResourceZoneScoped;
     //Create the Swapchain. 
-    pGpu->CreateSwapchain(&m_Swapchain, m_Surface, m_Extents, &m_ImageCount, m_Format, m_ColourSpace, m_PresentMode, name);
+    ParadoxError res = pGpu->CreateSwapchain(&m_Swapchain, m_Surface, m_Extents, &m_ImageCount, m_Format, m_ColourSpace, m_PresentMode);
+    if (res == ParadoxError::OutOfDate) {
+        return res;
+    }
 
 
     //Retrieve images from the swapchain. 
@@ -112,7 +124,9 @@ Paradox::ParadoxError Paradox::Swapchain::Create(const Window* pWindow, const Gp
         }
     }
 
-    return ParadoxError::Success;
+    m_bIsStale = false; 
+
+    return ParadoxError();
 }
 
 
@@ -138,6 +152,19 @@ Paradox::ParadoxError Paradox::Swapchain::Destroy(const Gpu* pGpu)
     }
 
     return ParadoxError::Success;
+}
+
+const uint32_t Paradox::Swapchain::AcquireNextImageIndex(const Gpu* pGpu, const uint64_t timeout, const uint32_t frameInFlight) const
+{
+    ResourceZoneScoped;
+    uint32_t imageIndex = -1u;
+
+    vkWaitForFences(pGpu->GetDevice(), 1, &m_ImageFences[frameInFlight], VK_TRUE, timeout);
+    vkResetFences(pGpu->GetDevice(), 1, &m_ImageFences[frameInFlight]);
+
+    Gpu::CheckVkResult(vkAcquireNextImageKHR(pGpu->GetDevice(), m_Swapchain, timeout, m_ImageReadySemaphores[frameInFlight], VK_NULL_HANDLE, &imageIndex));
+
+    return imageIndex;
 }
 
 Paradox::ParadoxError Paradox::Swapchain::Present(const uint32_t imageIndex, const Queue queue, const uint32_t frameInFlight)
@@ -188,14 +215,8 @@ void Paradox::Swapchain::SetPresentMode(VkPresentModeKHR presentMode)
     m_PresentMode = presentMode;
 }
 
-Paradox::ParadoxError Paradox::Swapchain::Recreate(const Window* pWindow, const Gpu* pGpu, const std::string& name)
+bool Paradox::Swapchain::IsStale() const
 {
-    ResourceZoneScoped;
-
-
-    pGpu->CreateSwapchain(&m_Swapchain, m_Surface, m_Extents, &m_ImageCount, m_Format, m_ColourSpace, m_PresentMode, name);
-
-
-
-    return ParadoxError();
+    return m_bIsStale; 
 }
+

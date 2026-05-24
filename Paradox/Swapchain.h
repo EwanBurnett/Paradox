@@ -15,22 +15,23 @@ namespace Paradox {
         Swapchain(); 
 
         ParadoxError Create(const Window* pWindow, const Gpu* pGpu, const std::string& name = "");
+        ParadoxError Recreate(const Window* pWindow, const Gpu* pGpu, const std::string& name = "");
         ParadoxError Destroy(const Gpu* pGpu); 
 
+        const uint32_t AcquireNextImageIndex(const Gpu* pGpu, const uint64_t timeout, const uint32_t frameInFlight = 0u) const;
         ParadoxError Present(const uint32_t imageIndex, const Queue queue, const uint32_t frameInFlight = 0u); 
 
         void SetSurfaceFormat(VkSurfaceFormatKHR format); 
         void SetPresentMode(VkPresentModeKHR presentMode); 
 
-    private: 
-        ParadoxError Recreate(const Window* pWindow, const Gpu* pGpu, const std::string& name = ""); 
+
+        bool IsStale() const; 
 
     private: 
         VkSwapchainKHR m_Swapchain; 
         VkSurfaceKHR m_Surface; 
         bool m_bIsStale; 
 
-        VkSemaphore m_ImageReadySemaphore; 
         std::array<VkFence, kFramesInFlight> m_ImageFences;
         std::array<std::vector<VkSemaphore>, kFramesInFlight> m_BinarySemaphores;
         std::array<VkSemaphore, kFramesInFlight> m_ImageReadySemaphores;

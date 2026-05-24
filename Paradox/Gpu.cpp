@@ -940,7 +940,7 @@ void Paradox::Gpu::DestroySemaphore(VkSemaphore* pSemaphore) const
     assert(m_Device != VK_NULL_HANDLE);
     VK_LOG("Destroying Semaphore <0x%08x> at [0x%08x].\n", *pSemaphore, pSemaphore);
     vkDestroySemaphore(m_Device, *pSemaphore, m_pAllocationCallbacks);
-    pSemaphore = VK_NULL_HANDLE;
+    *pSemaphore = VK_NULL_HANDLE;
 }
 
 void Paradox::Gpu::SignalSemaphore(VkSemaphore* pSemaphore, const uint64_t value) const
