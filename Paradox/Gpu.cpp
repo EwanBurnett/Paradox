@@ -1079,7 +1079,7 @@ void Paradox::Gpu::DestroySurface(VkSurfaceKHR* pSurface) const
 Paradox::ParadoxError Paradox::Gpu::CreateSwapchain(VkSwapchainKHR* pOutSwapchain, const VkSurfaceKHR surface, VkExtent2D extents, uint32_t* pImageCount, const VkFormat format, const VkColorSpaceKHR colourSpace, const VkPresentModeKHR presentMode, const std::string& name) const
 {
     VulkanZoneScoped;
-    assert(m_PhysicalDevice != VK_NULL_HANDLE); 
+    assert(m_PhysicalDevice != VK_NULL_HANDLE);
     assert(m_Device != VK_NULL_HANDLE);
 
     //Retrieve the current Surface Capabilities
@@ -1109,14 +1109,15 @@ Paradox::ParadoxError Paradox::Gpu::CreateSwapchain(VkSwapchainKHR* pOutSwapchai
 
     //Get the swapchain image count. 
     {
-        assert(pImageCount != nullptr); 
-        *pImageCount = capabilities.minImageCount + 1; 
+        assert(pImageCount != nullptr);
+        *pImageCount = capabilities.minImageCount + 1;
         if (capabilities.maxImageCount > 0 && *pImageCount > capabilities.maxImageCount)
         {
             *pImageCount = capabilities.maxImageCount;
         }
     }
-    
+
+    VkSwapchainKHR oldSwapchain = *pOutSwapchain;
 
     //Create the Swapchain. 
     const VkSwapchainCreateInfoKHR createInfo = {
@@ -1137,15 +1138,23 @@ Paradox::ParadoxError Paradox::Gpu::CreateSwapchain(VkSwapchainKHR* pOutSwapchai
         .compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
         .presentMode = presentMode,
         .clipped = VK_TRUE,
-        .oldSwapchain = *pOutSwapchain, 
+        .oldSwapchain = oldSwapchain,
     };
 
     vkDeviceWaitIdle(m_Device);     //Wait for all pending device work to finish! 
+
 
     VkResult res = CheckVkResult(vkCreateSwapchainKHR(m_Device, &createInfo, m_pAllocationCallbacks, pOutSwapchain), "Failed to Create Swapchain.\n");
     if (res != VK_SUCCESS) {
         return ParadoxError::Failed;
     }
+
+    //Destroy the old swapchain if present
+    if (oldSwapchain != VK_NULL_HANDLE)
+    {
+        DestroySwapchain(&oldSwapchain); 
+    }
+
 
     if (!name.empty()) {
         VK_LOG("Creating Swapchain \"%s\" -> <0x%08x> at [0x%08x].\n", name.c_str(), *pOutSwapchain, pOutSwapchain);
@@ -1170,7 +1179,7 @@ void Paradox::Gpu::DestroySwapchain(VkSwapchainKHR* pSwapchain) const
 Paradox::ParadoxError Paradox::Gpu::CreateImageView(VkImageView* pOutImageView, const VkImage sourceImage, VkImageViewType viewType, VkFormat format, VkImageSubresourceRange subresource, const std::string& name) const
 {
     VulkanZoneScoped;
-    assert(m_PhysicalDevice != VK_NULL_HANDLE); 
+    assert(m_PhysicalDevice != VK_NULL_HANDLE);
     assert(m_Device != VK_NULL_HANDLE);
 
     const VkImageViewCreateInfo createInfo = {

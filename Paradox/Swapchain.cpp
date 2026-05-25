@@ -76,7 +76,7 @@ Paradox::ParadoxError Paradox::Swapchain::Create(const Window* pWindow, const Gp
     }
 
 
-    Recreate(pWindow, pGpu, name); 
+    Recreate(pWindow, pGpu, name);
 
     return ParadoxError::Success;
 }
@@ -94,6 +94,12 @@ Paradox::ParadoxError Paradox::Swapchain::Recreate(const Window* pWindow, const 
     //Retrieve images from the swapchain. 
     {
         m_SwapchainImages.clear();
+
+        //Destroy old image views. 
+        for (auto& imageView : m_SwapchainImageViews) {
+            pGpu->DestroyImageView(&imageView);
+        }
+
         m_SwapchainImageViews.clear();
 
         {
@@ -124,7 +130,7 @@ Paradox::ParadoxError Paradox::Swapchain::Recreate(const Window* pWindow, const 
         }
     }
 
-    m_bIsStale = false; 
+    m_bIsStale = false;
 
     return ParadoxError();
 }
@@ -157,12 +163,15 @@ Paradox::ParadoxError Paradox::Swapchain::Destroy(const Gpu* pGpu)
 const uint32_t Paradox::Swapchain::AcquireNextImageIndex(const Gpu* pGpu, const uint64_t timeout, const uint32_t frameInFlight) const
 {
     ResourceZoneScoped;
-    uint32_t imageIndex = -1u;
+    uint32_t imageIndex = 0u;
 
     vkWaitForFences(pGpu->GetDevice(), 1, &m_ImageFences[frameInFlight], VK_TRUE, timeout);
     vkResetFences(pGpu->GetDevice(), 1, &m_ImageFences[frameInFlight]);
 
-    Gpu::CheckVkResult(vkAcquireNextImageKHR(pGpu->GetDevice(), m_Swapchain, timeout, m_ImageReadySemaphores[frameInFlight], VK_NULL_HANDLE, &imageIndex));
+    VkResult res = vkAcquireNextImageKHR(pGpu->GetDevice(), m_Swapchain, timeout, m_ImageReadySemaphores[frameInFlight], VK_NULL_HANDLE, &imageIndex);
+    if (res != VK_ERROR_OUT_OF_DATE_KHR) {
+        Gpu::CheckVkResult(res);
+    }
 
     return imageIndex;
 }
@@ -170,6 +179,22 @@ const uint32_t Paradox::Swapchain::AcquireNextImageIndex(const Gpu* pGpu, const 
 Paradox::ParadoxError Paradox::Swapchain::Present(const uint32_t imageIndex, const Queue queue, const uint32_t frameInFlight)
 {
     ResourceZoneScoped;
+
+    //Submit a dummy workload to the queue, to signal the relevant semaphores. 
+    {
+        //TODO: Queue::Submit(); 
+        VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT };
+        VkSubmitInfo submitInfo{
+            .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+            .pNext = nullptr,
+            .waitSemaphoreCount = 1,
+            .pWaitSemaphores = &GetImageAcquiredSemaphore(frameInFlight),
+            .pWaitDstStageMask = waitStages,
+            .signalSemaphoreCount = 1,
+            .pSignalSemaphores = &GetBinarySemaphore(frameInFlight, imageIndex),
+        };
+        VkResult ra = vkQueueSubmit(*(VkQueue*)&queue, 1, &submitInfo, GetFence(frameInFlight));
+    }
 
     const VkSemaphore waitSemaphores[] = {
         m_BinarySemaphores[frameInFlight].at(imageIndex)
@@ -190,7 +215,7 @@ Paradox::ParadoxError Paradox::Swapchain::Present(const uint32_t imageIndex, con
 
     if (res != VK_SUCCESS) {
         if (res == VK_ERROR_OUT_OF_DATE_KHR || res == VK_SUBOPTIMAL_KHR) {
-            Log::Warning("Swapchain is Out-of-date!\n");
+            //Log::Warning("Swapchain is Out-of-date!\n");
             m_bIsStale = true;
             return ParadoxError::OutOfDate;
         }
@@ -217,6 +242,21 @@ void Paradox::Swapchain::SetPresentMode(VkPresentModeKHR presentMode)
 
 bool Paradox::Swapchain::IsStale() const
 {
-    return m_bIsStale; 
+    return m_bIsStale;
+}
+
+const VkSemaphore& Paradox::Swapchain::GetBinarySemaphore(const uint32_t frameInFlight, const uint32_t imageIndex) const
+{
+    return m_BinarySemaphores[frameInFlight][imageIndex];
+}
+
+const VkSemaphore& Paradox::Swapchain::GetImageAcquiredSemaphore(const uint32_t frameInFlight) const
+{
+    return m_ImageReadySemaphores[frameInFlight];
+}
+
+const VkFence& Paradox::Swapchain::GetFence(const uint32_t frameInFlight) const
+{
+    return m_ImageFences[frameInFlight];
 }
 

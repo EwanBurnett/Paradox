@@ -27,6 +27,12 @@ namespace Paradox {
 
         bool IsStale() const; 
 
+    private:
+
+        const VkSemaphore& GetBinarySemaphore(const uint32_t frameInFlight, const uint32_t imageIndex) const;
+        const VkSemaphore& GetImageAcquiredSemaphore(const uint32_t frameInFlight = 0u) const;
+        const VkFence& GetFence(const uint32_t frameInFlight = 0u) const;
+
     private: 
         VkSwapchainKHR m_Swapchain; 
         VkSurfaceKHR m_Surface; 

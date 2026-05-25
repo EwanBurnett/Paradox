@@ -13,15 +13,6 @@
 
 int main() {
     glfwInit();
-    /*
-    */
-    for (size_t i = 0; i < (size_t)Paradox::ELogColour::ELogColour_MAX; ++i) {
-        Paradox::Log::Print((Paradox::ELogColour)i, "Hello, RT!\t[%d]\n", i);
-    }
-
-    Paradox::Log::Warning("A warning!\n");
-    //Paradox::Log::Error(__FILE__, __LINE__, __PRETTY_FUNCTION__, "Something went wrong!\n"); 
-
 
     Paradox::Window window;
     window.Create(400, 300, "Paradox");
@@ -45,72 +36,44 @@ int main() {
     swapchain.Create(&window, &gpu, "Swapchain");
 
     //Create a queue. 
-    std::vector<Paradox::Queue> graphicsQueues;
-    std::vector<Paradox::Queue> computeQueues;
-    std::vector<Paradox::Queue> transferQueues;
+    Paradox::Queue mainQueue; 
+    mainQueue.Create(&gpu, Paradox::EQueueType::Graphics, "Main Queue"); 
+    Paradox::Queue asyncTransferQueue; 
+    asyncTransferQueue.Create(&gpu, Paradox::EQueueType::Transfer, "Async Transfer Queue"); 
+    Paradox::Queue asyncComputeQueue; 
+    asyncComputeQueue.Create(&gpu, Paradox::EQueueType::Compute, "Async Compute Queue"); 
 
-    {
-        Paradox::Queue tmp;
-        Paradox::Log::Message("Graphics Queues\n");
-        while (tmp.Create(&gpu, Paradox::EQueueType::Graphics, std::format("Graphics Queue {0}", graphicsQueues.size())) != Paradox::ParadoxError::Failed) {
-            graphicsQueues.push_back(tmp);
-        }
-
-        Paradox::Log::Message("Compute Queues\n");
-        while (tmp.Create(&gpu, Paradox::EQueueType::Compute, std::format("Compute Queue {0}", computeQueues.size())) != Paradox::ParadoxError::Failed) {
-            computeQueues.push_back(tmp);
-        }
-
-        Paradox::Log::Message("Transfer Queues\n");
-        while (tmp.Create(&gpu, Paradox::EQueueType::Transfer, std::format("Cansfer Queue {0}", transferQueues.size())) != Paradox::ParadoxError::Failed) {
-            transferQueues.push_back(tmp);
-        }
-    }
-
-
-    Paradox::Fence fence;
-    fence.Create(&gpu, 0, "Fence");
-    VkFence vkFence;
-    gpu.CreateFence(&vkFence, true, "DbgFence");
-
-    VkSemaphore binary;
-    gpu.CreateBinarySemaphore(&binary, "DbgBinarySemaphore");
 
     uint64_t frameIdx = 0;
     while (window.PollEvents()) {
         ParadoxZoneScoped;
         uint32_t frameInFlight = frameIdx % Paradox::kFramesInFlight; 
-        uint32_t imageIdx = 0u;     //TODO: Work submission, etc!
-        //uint32_t imageIdx = swapchain.AcquireNextImageIndex(&gpu, UINT64_MAX, frameInFlight);
+        uint32_t imageIdx = swapchain.AcquireNextImageIndex(&gpu, UINT64_MAX, frameInFlight);
 
         Paradox::Log::Print(Paradox::ELogColour::Cyan, "Frame %d               \r", frameIdx);
 
-        //Submit some work. 
-        //queue.Submit(&gpu, nullptr);
+        //Submit some work.
+        {
 
-        Paradox::Profiler::EndFrame();
+        }
 
-        fence.Signal(&gpu, frameIdx + 1);
-        fence.Wait(&gpu, frameIdx + 1);
-        /*
-        */
-
-        auto r = swapchain.Present(imageIdx, graphicsQueues[0], frameInFlight); //NOTE: This'll shout about Semaphores not being signalled, since we're not submitting any work to *do* the signalling! 
+        //Present the swapchain. 
+        auto r = swapchain.Present(imageIdx, mainQueue, frameInFlight); 
 
         if (r == Paradox::ParadoxError::OutOfDate) {
             swapchain.Recreate(&window, &gpu, "Swapchain"); 
         }
 
         frameIdx++; 
+
+        Paradox::Profiler::EndFrame();
     }
 
-    vkDeviceWaitIdle(gpu.GetDevice()); 
+    vkDeviceWaitIdle(gpu.GetDevice());  //TODO: Gpu::Flush() & Queue::Flush(); 
 
-    gpu.DestroySemaphore(&binary);
-    gpu.DestroyFence(&vkFence);
-    fence.Destroy(&gpu);
-
-    //queue.Destroy(&gpu);
+    asyncComputeQueue.Destroy(&gpu);
+    asyncTransferQueue.Destroy(&gpu); 
+    mainQueue.Destroy(&gpu); 
     swapchain.Destroy(&gpu);
 
     gpu.Shutdown();
